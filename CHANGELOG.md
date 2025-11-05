@@ -10,6 +10,8 @@
 - `mcporter list` now prints `[source: …]` (and `Source:` in single-server mode) for servers imported from other configs so you can see whether an entry came from Cursor, Claude, etc.
 - Added a `--timeout <ms>` flag to `mcporter list` to override the per-server discovery timeout without touching environment variables.
 
+- Generated CLIs now show full command signatures in help and support `--compile` without leaving template/bundle intermediates.
+
 ## [0.1.0]
 
 - Initial release.
