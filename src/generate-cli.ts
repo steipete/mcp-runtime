@@ -46,8 +46,17 @@ export async function generateCli(
   const tools = await fetchTools(definition, name, options.configPath, options.rootDir);
   const toolMetadata = tools.map((tool) => buildToolMetadata(tool));
   const generator = await readPackageMetadata();
+  let templateTmpDir: string | undefined;
+  let templateOutputPath = options.outputPath;
+  if (!templateOutputPath && options.compile) {
+    const tmpPrefix = path.join(process.cwd(), 'tmp', 'mcporter-cli-');
+    await fs.mkdir(path.dirname(tmpPrefix), { recursive: true });
+    templateTmpDir = await fs.mkdtemp(tmpPrefix);
+    templateOutputPath = path.join(templateTmpDir, `${name}.ts`);
+  }
+
   const outputPath = await writeTemplate({
-    outputPath: options.outputPath,
+    outputPath: templateOutputPath,
     runtimeKind,
     timeoutMs,
     definition,
@@ -56,34 +65,44 @@ export async function generateCli(
     generator,
   });
 
-  const shouldBundle = Boolean(options.bundle ?? options.compile);
   let bundlePath: string | undefined;
   let compilePath: string | undefined;
-  if (shouldBundle) {
-    const targetPath = resolveBundleTarget({
-      bundle: options.bundle,
-      compile: options.compile,
-      outputPath,
-      runtimeKind,
-    });
-    bundlePath = await bundleOutput({
-      sourcePath: outputPath,
-      runtimeKind,
-      targetPath,
-      minify: options.minify ?? false,
-    });
 
-    if (options.compile) {
-      if (runtimeKind !== 'bun') {
-        throw new Error('--compile is only supported when --runtime bun');
+  try {
+    const shouldBundle = Boolean(options.bundle ?? options.compile);
+    if (shouldBundle) {
+      const targetPath = resolveBundleTarget({
+        bundle: options.bundle,
+        compile: options.compile,
+        outputPath,
+      });
+      bundlePath = await bundleOutput({
+        sourcePath: outputPath,
+        runtimeKind,
+        targetPath,
+        minify: options.minify ?? false,
+      });
+
+      if (options.compile) {
+        if (runtimeKind !== 'bun') {
+          throw new Error('--compile is only supported when --runtime bun');
+        }
+        const compileTarget = computeCompileTarget(options.compile, bundlePath, name);
+        await compileBundleWithBun(bundlePath, compileTarget);
+        compilePath = compileTarget;
+        if (!options.bundle) {
+          await fs.rm(bundlePath).catch(() => {});
+          bundlePath = undefined;
+        }
       }
-      const compileTarget = computeCompileTarget(options.compile, bundlePath, name);
-      await compileBundleWithBun(bundlePath, compileTarget);
-      compilePath = compileTarget;
+    }
+  } finally {
+    if (templateTmpDir) {
+      await fs.rm(templateTmpDir, { recursive: true, force: true }).catch(() => {});
     }
   }
 
-  return { outputPath, bundlePath, compilePath };
+  return { outputPath: options.outputPath ?? outputPath, bundlePath, compilePath };
 }
 
 async function resolveServerDefinition(
@@ -665,6 +684,7 @@ async function bundleOutput({
   minify: boolean;
 }): Promise<string> {
   const absTarget = path.resolve(targetPath);
+  await fs.mkdir(path.dirname(absTarget), { recursive: true });
   await esbuild({
     absWorkingDir: process.cwd(),
     entryPoints: [sourcePath],
@@ -711,26 +731,28 @@ function resolveBundleTarget({
   bundle,
   compile,
   outputPath,
-  runtimeKind,
 }: {
   bundle?: boolean | string;
   compile?: boolean | string;
   outputPath: string;
-  runtimeKind: 'node' | 'bun';
 }): string {
-  const defaultExt = runtimeKind === 'bun' ? '.js' : '.cjs';
   if (typeof bundle === 'string') {
     return bundle;
   }
   if (bundle) {
-    return replaceExtension(outputPath, defaultExt.slice(1));
+    throw new Error('--bundle requires an explicit output path when used with --compile.');
   }
   if (typeof compile === 'string') {
     const ext = path.extname(compile);
     const base = ext ? path.join(path.dirname(compile), path.basename(compile, ext)) : compile;
-    return `${base}${defaultExt}`;
+    return `${base}.js`;
   }
-  return replaceExtension(outputPath, defaultExt.slice(1));
+  if (compile) {
+    const tmpDir = path.join(process.cwd(), 'tmp', 'mcporter-cli-bundles');
+    const baseName = path.basename(outputPath, path.extname(outputPath)) || 'bundle';
+    return path.join(tmpDir, `${baseName}-${Date.now()}.bundle.js`);
+  }
+  throw new Error('--compile requires an explicit bundle target.');
 }
 
 // computeCompileTarget picks the final binary output location, defaulting to the bundle basename.
@@ -743,12 +765,9 @@ function computeCompileTarget(
   if (typeof compileOption === 'string') {
     return compileOption;
   }
-  const bundleDir = path.dirname(bundlePath);
-  if (serverName) {
-    return path.join(bundleDir, serverName);
-  }
   const parsed = path.parse(bundlePath);
-  return path.join(parsed.dir, parsed.name);
+  const base = parsed.name.replace(/\.bundle$/, '') || serverName || 'mcporter-cli';
+  return path.join(parsed.dir, base);
 }
 
 async function resolveRuntimeKind(
