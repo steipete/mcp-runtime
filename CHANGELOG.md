@@ -11,6 +11,7 @@
 - Exported the identifier normalization helpers so other modules can reuse the shared Levenshtein logic without duplicate implementations.
 - Added a shared `extractEphemeralServerFlags` helper so `list`, `call`, and `auth` parse ad-hoc transports consistently, extended `mcporter auth` to accept bare URLs/`--http-url`/`--stdio`, and taught single-server listings to hint `mcporter auth https://…` when a 401 occurs. Docs (`README.md`, `docs/adhoc.md`, `docs/local.md`, `docs/call-heuristic.md`) and new tests (`tests/cli-auth.test.ts`, `tests/cli-ephemeral-flags.test.ts`, expanded `tests/cli-list.test.ts`) cover the workflow.
 - Flag-style tool invocations now accept `key:value` and `key: value` alongside the existing `key=value` form, making commands like `mcporter context7.resolve-library-id libraryName:value` Just Work. Documented in the README/call syntax guide and covered by `tests/cli-call.test.ts`.
+- Added `docs/tool-calling.md`, a cheatsheet summarizing every supported invocation pattern (inferred verbs, flag styles, function-call syntax, and ad-hoc URL workflows).
 
 ## [0.3.0] - 2025-11-06
 
