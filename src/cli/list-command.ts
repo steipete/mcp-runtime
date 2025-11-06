@@ -1,7 +1,8 @@
 import ora from 'ora';
+import { extractOptions } from './generate/tools.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { formatSourceSuffix, renderServerListRow } from './list-format.js';
-import { supportsSpinner } from './terminal.js';
+import { dimText, supportsAnsiColor, supportsSpinner } from './terminal.js';
 import { LIST_TIMEOUT_MS, withTimeout } from './timeouts.js';
 
 export function extractListFlags(args: string[]): { schema: boolean; timeoutMs?: number } {
@@ -132,7 +133,8 @@ export async function handleList(
   const definition = runtime.getDefinition(target);
   const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
   const sourcePath = formatSourceSuffix(definition.source, true);
-  console.log(`- ${target}`);
+  const serverLabel = supportsAnsiColor ? `\u001B[1m${target}\u001B[0m` : target;
+  console.log(serverLabel);
   if (sourcePath) {
     console.log(`  Source: ${sourcePath}`);
   }
@@ -142,14 +144,42 @@ export async function handleList(
       console.log('  Tools: <none>');
       return;
     }
-    console.log('  Tools:');
     for (const tool of tools) {
-      const doc = tool.description ? `: ${tool.description}` : '';
-      console.log(`    - ${tool.name}${doc}`);
+      const toolName = supportsAnsiColor ? `\u001B[36m${tool.name}\u001B[0m` : tool.name;
+      console.log(`  ${toolName}`);
+      if (tool.description) {
+        console.log(`    ${dimText('Description:')} ${tool.description}`);
+      }
+      const options = extractOptions(tool);
+      const requiredOptions = options.filter((option) => option.required);
+      const optionalOptions = options.filter((option) => !option.required);
+      if (requiredOptions.length > 0) {
+        console.log(
+          `    ${dimText('Required:')} ${requiredOptions
+            .map((option) => `--${option.cliName} ${option.placeholder}`)
+            .join(' ')}`
+        );
+      } else {
+        console.log(`    ${dimText('Required:')} <none>`);
+      }
+      if (optionalOptions.length > 0) {
+        console.log(
+          `    ${dimText('Optional:')} ${optionalOptions
+            .map((option) => `--${option.cliName} ${option.placeholder}`)
+            .join(' ')}`
+        );
+      }
+      const usageParts = [`mcporter call ${target}.${tool.name}`];
+      for (const option of requiredOptions) {
+        usageParts.push(`--${option.cliName} ${option.placeholder}`);
+      }
+      console.log(`    ${dimText('Usage:')} ${usageParts.join(' ')}`);
       if (flags.schema && tool.inputSchema) {
         console.log(indent(JSON.stringify(tool.inputSchema, null, 2), '      '));
       }
+      console.log('');
     }
+    return;
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to load tool list.';
     const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;

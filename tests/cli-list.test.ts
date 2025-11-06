@@ -124,4 +124,40 @@ describe('CLI list classification', () => {
     warnSpy.mockRestore();
     process.env.CI = originalCI;
   });
+
+  it('prints detailed usage for single server listings', async () => {
+    const { handleList } = await cliModulePromise;
+    const runtime = {
+      getDefinition: (name: string) => ({
+        name,
+        command: { kind: 'http', url: new URL('https://example.com/mcp') },
+      }),
+      listTools: () =>
+        Promise.resolve([
+          {
+            name: 'add',
+            description: 'Add two numbers',
+            inputSchema: {
+              type: 'object',
+              properties: {
+                a: { type: 'number' },
+                format: { type: 'string', enum: ['json', 'markdown'] },
+              },
+              required: ['a'],
+            },
+          },
+        ]),
+    } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['calculator']);
+
+    const logLines = logSpy.mock.calls.map((call) => call.join(' '));
+    expect(logLines.some((line) => line.includes('calculator'))).toBe(true);
+    expect(logLines.some((line) => line.includes('Add two numbers'))).toBe(true);
+    expect(logLines.some((line) => line.includes('Usage: mcporter call calculator.add --a <a:number>'))).toBe(true);
+
+    logSpy.mockRestore();
+  });
 });
