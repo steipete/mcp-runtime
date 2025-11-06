@@ -2,12 +2,13 @@ import ora from 'ora';
 import type { ServerDefinition } from '../config.js';
 import type { ServerToolInfo } from '../runtime.js';
 import { type EphemeralServerSpec, persistEphemeralServer, resolveEphemeralServer } from './adhoc-server.js';
+import { extractEphemeralServerFlags } from './ephemeral-flags.js';
 import type { GeneratedOption } from './generate/tools.js';
 import { extractOptions } from './generate/tools.js';
 import { chooseClosestIdentifier } from './identifier-helpers.js';
 import { buildDocComment, formatOptionalSummary, selectDisplayOptions } from './list-detail-helpers.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
-import { formatSourceSuffix, renderServerListRow } from './list-format.js';
+import { classifyListError, formatSourceSuffix, renderServerListRow } from './list-format.js';
 import { boldText, cyanText, dimText, extraDimText, supportsSpinner, yellowText } from './terminal.js';
 import { LIST_TIMEOUT_MS, withTimeout } from './timeouts.js';
 
@@ -20,104 +21,13 @@ export function extractListFlags(args: string[]): {
   let schema = false;
   let timeoutMs: number | undefined;
   let requiredOnly = true;
-  let ephemeral: EphemeralServerSpec | undefined;
+  const ephemeral = extractEphemeralServerFlags(args);
   let index = 0;
-  const ensureEphemeral = (): EphemeralServerSpec => {
-    if (!ephemeral) {
-      ephemeral = {};
-    }
-    return ephemeral;
-  };
   while (index < args.length) {
     const token = args[index];
     if (token === '--schema') {
       schema = true;
       args.splice(index, 1);
-      continue;
-    }
-    if (token === '--http-url') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--http-url' requires a value.");
-      }
-      ensureEphemeral().httpUrl = value;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--allow-http') {
-      ensureEphemeral().allowInsecureHttp = true;
-      args.splice(index, 1);
-      continue;
-    }
-    if (token === '--stdio') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--stdio' requires a value.");
-      }
-      ensureEphemeral().stdioCommand = value;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--stdio-arg') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--stdio-arg' requires a value.");
-      }
-      const spec = ensureEphemeral();
-      spec.stdioArgs = [...(spec.stdioArgs ?? []), value];
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--env') {
-      const value = args[index + 1];
-      if (!value || !value.includes('=')) {
-        throw new Error("Flag '--env' requires KEY=value.");
-      }
-      const [key, ...rest] = value.split('=');
-      if (!key) {
-        throw new Error("Flag '--env' requires KEY=value.");
-      }
-      const spec = ensureEphemeral();
-      const envMap = spec.env ? { ...spec.env } : {};
-      envMap[key] = rest.join('=');
-      spec.env = envMap;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--cwd') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--cwd' requires a value.");
-      }
-      ensureEphemeral().cwd = value;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--name') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--name' requires a value.");
-      }
-      ensureEphemeral().name = value;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--description') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--description' requires a value.");
-      }
-      ensureEphemeral().description = value;
-      args.splice(index, 2);
-      continue;
-    }
-    if (token === '--persist') {
-      const value = args[index + 1];
-      if (!value) {
-        throw new Error("Flag '--persist' requires a value.");
-      }
-      ensureEphemeral().persistPath = value;
-      args.splice(index, 2);
       continue;
     }
     if (token === '--yes') {
@@ -303,7 +213,7 @@ export async function handleList(
       }
       optionalOmitted ||= detail.optionalOmitted;
     }
-    const uniqueExamples = Array.from(new Set(examples)).filter(Boolean).slice(0, 3);
+    const uniqueExamples = formatExampleBlock(examples);
     if (uniqueExamples.length > 0) {
       console.log(`  ${dimText('Examples:')}`);
       for (const example of uniqueExamples) {
@@ -323,8 +233,13 @@ export async function handleList(
     printSingleServerHeader(definition, undefined, durationMs, transportSummary, sourcePath);
     const message = error instanceof Error ? error.message : 'Failed to load tool list.';
     const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
+    const authCommand = buildAuthCommandHint(definition);
+    const advice = classifyListError(error, definition.name, timeoutMs, { authCommand });
     console.warn(`  Tools: <timed out after ${timeoutMs}ms>`);
     console.warn(`  Reason: ${message}`);
+    if (advice.category === 'auth' && advice.authCommand) {
+      console.warn(`  Next: run '${advice.authCommand}' to finish authentication.`);
+    }
   }
 }
 
@@ -405,6 +320,30 @@ function printToolDetail(
     example: formatCallExpressionExample(serverName, tool.name, displayOptions.length > 0 ? displayOptions : options),
     optionalOmitted: hiddenOptions.length > 0,
   };
+}
+
+function buildAuthCommandHint(
+  definition: ReturnType<Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>['getDefinition']>
+): string {
+  if (definition.source?.kind === 'local' && definition.source.path === '<adhoc>') {
+    if (definition.command.kind === 'http') {
+      const url = definition.command.url instanceof URL ? definition.command.url.href : String(definition.command.url);
+      return `mcporter auth ${url}`;
+    }
+    if (definition.command.kind === 'stdio') {
+      const parts = [definition.command.command, ...(definition.command.args ?? [])];
+      const rendered = parts.map(quoteCommandSegment).join(' ').trim();
+      return rendered.length > 0 ? `mcporter auth --stdio ${rendered}` : 'mcporter auth --stdio';
+    }
+  }
+  return `mcporter auth ${definition.name}`;
+}
+
+function quoteCommandSegment(segment: string): string {
+  if (/^[A-Za-z0-9_./:-]+$/.test(segment)) {
+    return segment;
+  }
+  return JSON.stringify(segment);
 }
 
 function formatFunctionSignature(name: string, options: GeneratedOption[], outputSchema: unknown): string {
@@ -523,6 +462,34 @@ function suggestServerName(
   const definitions = runtime.getDefinitions();
   const names = definitions.map((entry) => entry.name);
   return chooseClosestIdentifier(attempted, names);
+}
+
+function formatExampleBlock(examples: string[], maxExamples = 1, maxLength = 80): string[] {
+  return Array.from(new Set(examples))
+    .filter(Boolean)
+    .slice(0, maxExamples)
+    .map((example) => truncateExample(example, maxLength));
+}
+
+function truncateExample(example: string, maxLength: number): string {
+  if (example.length <= maxLength) {
+    return example;
+  }
+  const openIndex = example.indexOf('(');
+  const closeIndex = example.lastIndexOf(')');
+  if (openIndex === -1 || closeIndex === -1 || closeIndex <= openIndex) {
+    return `${example.slice(0, Math.max(0, maxLength - 1))}…`;
+  }
+  const prefix = example.slice(0, openIndex + 1);
+  const suffix = example.slice(closeIndex);
+  const available = maxLength - prefix.length - suffix.length - 5; // room for ', ...'
+  if (available <= 0) {
+    return `${prefix}...${suffix}`;
+  }
+  const args = example.slice(openIndex + 1, closeIndex).trim();
+  const shortened = args.slice(0, available).trimEnd().replace(/[,\s]+$/, '');
+  const ellipsis = shortened.length > 0 ? `${shortened}, ...` : '...';
+  return `${prefix}${ellipsis}${suffix}`;
 }
 
 function formatCallExpressionExample(

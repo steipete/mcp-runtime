@@ -190,6 +190,38 @@ describe('CLI list classification', () => {
     process.env.CI = originalCI;
   });
 
+  it('suggests URL-based auth for ad-hoc HTTP servers', async () => {
+    const { handleList } = await cliModulePromise;
+    const definitions = new Map<string, ServerDefinition>();
+    const runtime = {
+      registerDefinition: vi.fn((definition: ServerDefinition) => {
+        definitions.set(definition.name, definition);
+      }),
+      getDefinition: vi.fn((name: string) => {
+        const entry = definitions.get(name);
+        if (!entry) {
+          throw new Error(`Unknown MCP server '${name}'.`);
+        }
+        return entry;
+      }),
+      getDefinitions: () => Array.from(definitions.values()),
+      listTools: vi.fn().mockRejectedValue(new Error('SSE error: Non-200 status code (401)')),
+    } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['https://mcp.supabase.com/mcp']);
+
+    const hinted = warnSpy.mock.calls.some((call) =>
+      (call[0]?.toString() ?? '').includes("Next: run 'mcporter auth https://mcp.supabase.com/mcp'")
+    );
+    expect(hinted).toBe(true);
+
+    warnSpy.mockRestore();
+    logSpy.mockRestore();
+  });
+
   it('prints detailed usage for single server listings', async () => {
     const { handleList } = await cliModulePromise;
     const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>
@@ -285,6 +317,30 @@ describe('CLI list classification', () => {
       lines.some((line) => line.includes('Optional parameters hidden; run with --all-parameters to view all fields'))
     ).toBe(true);
     expect(listToolsSpy).toHaveBeenCalledWith('linear', { includeSchema: true });
+
+    logSpy.mockRestore();
+  });
+
+  it('truncates long examples for readability', async () => {
+    const { handleList } = await cliModulePromise;
+    const listToolsSpy = vi.fn((_name: string, options?: { includeSchema?: boolean }) =>
+      Promise.resolve([buildLinearDocumentsTool(options?.includeSchema)])
+    );
+    const runtime = {
+      getDefinition: () => linearDefinition,
+      listTools: listToolsSpy,
+    } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await handleList(runtime, ['linear']);
+
+    const lines = logSpy.mock.calls.map((call) => stripAnsi(call.join(' ')));
+    const exampleLines = lines.filter((line) => line.includes('mcporter call linear.'));
+    expect(exampleLines).toHaveLength(1);
+    const exampleLine = exampleLines[0] as string;
+    expect(exampleLine.length).toBeLessThanOrEqual(90);
+    expect(exampleLine).toMatch(/, ...\)$/);
 
     logSpy.mockRestore();
   });
@@ -435,8 +491,7 @@ describe('CLI list classification', () => {
         function create_comment(issueId: string, parentId?: string, body: string): Comment;
 
         Examples:
-          mcporter call linear.list_documents(query: "value", limit: 1, orderBy: "createdAt")
-          mcporter call linear.create_comment(issueId: "example-id", parentId: "example-id", body: "value")
+          mcporter call linear.list_documents(query: "value", limit: 1, orderBy: "cr, ...)
 
         Optional parameters hidden; run with --all-parameters to view all fields.
 
