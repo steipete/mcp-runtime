@@ -14,6 +14,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.10.1
         version: 1.21.0
+      acorn:
+        specifier: ^8.15.0
+        version: 8.15.0
       commander:
         specifier: ^12.1.0
         version: 12.1.0
@@ -30,6 +33,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.3.3
         version: 2.3.3
+      '@types/estree':
+        specifier: ^1.0.8
+        version: 1.0.8
       '@types/express':
         specifier: ^5.0.5
         version: 5.0.5
@@ -598,6 +604,11 @@ packages:
   accepts@2.0.0:
     resolution: {integrity: sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng==}
     engines: {node: '>= 0.6'}
+
+  acorn@8.15.0:
+    resolution: {integrity: sha512-NZyJarBfL7nWwIq+FDL6Zp/yHEhePMNnnJ0y3qfieCrmNvYct8uvtiV41UvlSe6apAfk0fY1FbWx+NwfmpvtTg==}
+    engines: {node: '>=0.4.0'}
+    hasBin: true
 
   ajv-formats@3.0.1:
     resolution: {integrity: sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ==}
@@ -1703,6 +1714,8 @@ snapshots:
     dependencies:
       mime-types: 3.0.1
       negotiator: 1.0.0
+
+  acorn@8.15.0: {}
 
   ajv-formats@3.0.1(ajv@8.17.1):
     optionalDependencies:

@@ -185,6 +185,11 @@ function printToolDetail(
   const header = formatToolSignature(tool.name, tool.description ?? '', options);
   console.log(`  ${header}`);
 
+  const altExample = formatCallExpressionExample(serverName, tool.name, options);
+  if (altExample) {
+    console.log(`    ${dimText('Alt:')} ${altExample}`);
+  }
+
   const usageParts = [`mcporter call ${serverName}.${tool.name}`];
   for (const option of options.filter((entry) => entry.required)) {
     usageParts.push(`--${option.cliName} ${option.placeholder}`);
@@ -199,49 +204,120 @@ function printToolDetail(
 }
 
 function formatToolSignature(name: string, description: string, options: GeneratedOption[]): string {
-  const parameters = formatParameterList(options);
+  const parameters = formatParameterSignatureList(options);
   const descriptionSuffix = description ? ` — ${description}` : '';
   return `${cyanText(name)}${parameters}${descriptionSuffix}`;
 }
 
-function formatParameterList(options: GeneratedOption[]): string {
+function formatParameterSignatureList(options: GeneratedOption[]): string {
   if (options.length === 0) {
     return '()';
   }
-  const segments = options.map((option) => {
-    const formatted = formatParameter(option);
-    return option.required ? formatted : `[${formatted}]`;
-  });
+  const segments = options.map((option) => formatParameterSignature(option));
   return `(${segments.join(', ')})`;
 }
 
-function formatParameter(option: GeneratedOption): string {
-  let detail: string | undefined;
+function formatParameterSignature(option: GeneratedOption): string {
+  const typeAnnotation = formatTypeAnnotation(option);
+  const optionalSuffix = option.required ? '' : '?';
+  return `${option.property}${optionalSuffix}: ${typeAnnotation}`;
+}
+
+function formatTypeAnnotation(option: GeneratedOption): string {
+  let baseType: string;
   if (option.enumValues && option.enumValues.length > 0) {
-    detail = option.enumValues.join('|');
+    baseType = option.enumValues.map((value) => JSON.stringify(value)).join(' | ');
   } else {
     switch (option.type) {
       case 'number':
-        detail = 'number';
+        baseType = 'number';
         break;
       case 'boolean':
-        detail = 'true|false';
+        baseType = 'boolean';
         break;
       case 'array':
-        detail = 'value1,value2';
+        baseType = 'string[]';
         break;
       case 'string':
-        detail = 'string';
+        baseType = 'string';
         break;
       default:
-        detail = undefined;
+        baseType = 'unknown';
         break;
     }
   }
-
-  const detailText = detail ? `${option.property}:${dimText(detail)}` : option.property;
+  const dimmedType = dimText(baseType);
   if (option.formatHint && option.type === 'string' && (!option.enumValues || option.enumValues.length === 0)) {
-    return `${detailText} ${dimText(`(${option.formatHint})`)}`;
+    return `${dimmedType} ${dimText(`/* ${option.formatHint} */`)}`;
   }
-  return detailText;
+  return dimmedType;
+}
+
+function formatCallExpressionExample(
+  serverName: string,
+  toolName: string,
+  options: GeneratedOption[]
+): string | undefined {
+  const assignments = options
+    .map((option) => ({ option, literal: buildExampleLiteral(option) }))
+    .filter(({ option, literal }) => option.required || literal !== undefined)
+    .map(({ option, literal }) => {
+      const value = literal ?? buildFallbackLiteral(option);
+      return `${option.property}: ${value}`;
+    });
+
+  const args = assignments.join(', ');
+  const callSuffix = assignments.length > 0 ? `(${args})` : '()';
+  return `mcporter call ${serverName}.${toolName}${callSuffix}`;
+}
+
+function buildExampleLiteral(option: GeneratedOption): string | undefined {
+  if (option.enumValues && option.enumValues.length > 0) {
+    return JSON.stringify(option.enumValues[0]);
+  }
+  if (!option.exampleValue) {
+    return undefined;
+  }
+  if (option.type === 'array') {
+    const values = option.exampleValue
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+    if (values.length === 0) {
+      return undefined;
+    }
+    return `[${values.map((entry) => JSON.stringify(entry)).join(', ')}]`;
+  }
+  if (option.type === 'number' || option.type === 'boolean') {
+    return option.exampleValue;
+  }
+  try {
+    const parsed = JSON.parse(option.exampleValue);
+    if (typeof parsed === 'number' || typeof parsed === 'boolean') {
+      return option.exampleValue;
+    }
+  } catch {
+    // Ignore JSON parse errors; fall through to quote string values.
+  }
+  return JSON.stringify(option.exampleValue);
+}
+
+function buildFallbackLiteral(option: GeneratedOption): string {
+  switch (option.type) {
+    case 'number':
+      return '1';
+    case 'boolean':
+      return 'true';
+    case 'array':
+      return '["value1"]';
+    default: {
+      if (option.property.toLowerCase().includes('id')) {
+        return JSON.stringify('example-id');
+      }
+      if (option.property.toLowerCase().includes('url')) {
+        return JSON.stringify('https://example.com');
+      }
+      return JSON.stringify('value');
+    }
+  }
 }

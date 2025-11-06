@@ -164,9 +164,10 @@ describe('CLI list classification', () => {
     expect(
       logLines.some((line) => line.includes('calculator - Test integration server [HTTP https://example.com/mcp]'))
     ).toBe(true);
-    expect(logLines.some((line) => line.includes('Add two numbers'))).toBe(true);
+    expect(logLines.some((line) => line.includes('add('))).toBe(true);
+    expect(logLines.some((line) => line.includes('Alt: mcporter call calculator.add('))).toBe(true);
+    expect(logLines.some((line) => line.includes('dueBefore?:') && line.includes('ISO 8601'))).toBe(true);
     expect(logLines.some((line) => line.includes('Usage: mcporter call calculator.add --a <a:number>'))).toBe(true);
-    expect(logLines.some((line) => line.includes('[dueBefore:string (ISO 8601)]'))).toBe(true);
     expect(listToolsSpy).toHaveBeenCalledWith('calculator', { includeSchema: true });
 
     logSpy.mockRestore();

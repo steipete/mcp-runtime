@@ -37,6 +37,7 @@
   "dependencies": {
     "@iarna/toml": "^2.2.5",
     "@modelcontextprotocol/sdk": "^1.10.1",
+    "acorn": "^8.15.0",
     "commander": "^12.1.0",
     "esbuild": "^0.25.4",
     "ora": "^8.0.1",
@@ -44,6 +45,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.3.3",
+    "@types/estree": "^1.0.8",
     "@types/express": "^5.0.5",
     "@types/node": "^24.10.0",
     "@typescript/native-preview": "7.0.0-dev.20251104.1",

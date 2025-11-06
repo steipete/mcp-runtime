@@ -54,6 +54,37 @@ describe('CLI call argument parsing', () => {
     expect(parsed.args).toEqual({ timeout: 500 });
   });
 
+  it('parses function-call syntax with named arguments', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    const parsed = parseCallArguments(['linear.create_comment(issueId: "ISSUE-123", body: "Hello", notify: false)']);
+    expect(parsed.selector).toBeUndefined();
+    expect(parsed.server).toBe('linear');
+    expect(parsed.tool).toBe('create_comment');
+    expect(parsed.args).toEqual({ issueId: 'ISSUE-123', body: 'Hello', notify: false });
+  });
+
+  it('supports function-call syntax when the server is provided separately', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    const parsed = parseCallArguments(['--server', 'linear', 'create_comment(issueId: "123")']);
+    expect(parsed.server).toBe('linear');
+    expect(parsed.tool).toBe('create_comment');
+    expect(parsed.args).toEqual({ issueId: '123' });
+  });
+
+  it('rejects conflicting server names between flags and call syntax', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    expect(() => parseCallArguments(['--server', 'github', 'linear.create_comment(issueId: "123")'])).toThrow(
+      "Conflicting server names: 'github' from flags and 'linear' from call expression."
+    );
+  });
+
+  it('requires named arguments in the call expression', async () => {
+    const { parseCallArguments } = await cliModulePromise;
+    expect(() => parseCallArguments(['linear.create_comment("oops")'])).toThrow(
+      'Function-call syntax requires named arguments (e.g. issueId: 123).'
+    );
+  });
+
   it('throws when trailing tokens lack key=value formatting', async () => {
     const { parseCallArguments } = await cliModulePromise;
     expect(() => parseCallArguments(['chrome-devtools', 'list_pages', 'oops'])).toThrow(
@@ -108,5 +139,27 @@ describe('CLI call argument parsing', () => {
     expect(listTools).toHaveBeenCalledWith('linear');
 
     logSpy.mockRestore();
+  });
+
+  it('suggests similar tool names when the match is uncertain', async () => {
+    const { handleCall } = await cliModulePromise;
+    const callTool = vi.fn().mockRejectedValue(new Error('MCP error -32602: Tool listIssues not found'));
+    const listTools = vi.fn().mockResolvedValue([{ name: 'list_issue_statuses' }]);
+    const runtime = {
+      callTool,
+      listTools,
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
+
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(handleCall(runtime, ['linear.listIssues'])).rejects.toThrow('Tool listIssues not found');
+
+    const errors = errorSpy.mock.calls.map((call) => call.join(' '));
+    expect(errors.some((line) => line.includes('Did you mean linear.list_issue_statuses'))).toBe(true);
+    expect(callTool).toHaveBeenCalledTimes(1);
+    expect(listTools).toHaveBeenCalledWith('linear');
+
+    errorSpy.mockRestore();
   });
 });

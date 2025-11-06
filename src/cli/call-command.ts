@@ -1,4 +1,5 @@
 import { createCallResult } from '../result-utils.js';
+import { parseCallExpressionFragment } from './call-expression-parser.js';
 import { type OutputFormat, printCallOutput, tailLogIfRequested } from './output-utils.js';
 import { dumpActiveHandles } from './runtime-debug.js';
 import { dimText } from './terminal.js';
@@ -99,6 +100,28 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
   }
 
   if (positional.length > 0) {
+    const callExpression = parseCallExpressionFragment(positional[0] ?? '');
+    if (callExpression) {
+      positional.shift();
+      if (callExpression.server) {
+        if (result.server && result.server !== callExpression.server) {
+          throw new Error(
+            `Conflicting server names: '${result.server}' from flags and '${callExpression.server}' from call expression.`
+          );
+        }
+        result.server = result.server ?? callExpression.server;
+      }
+      if (result.tool && result.tool !== callExpression.tool) {
+        throw new Error(
+          `Conflicting tool names: '${result.tool}' from flags and '${callExpression.tool}' from call expression.`
+        );
+      }
+      result.tool = callExpression.tool;
+      Object.assign(result.args, callExpression.args);
+    }
+  }
+
+  if (!result.selector && positional.length > 0) {
     result.selector = positional.shift();
   }
 
@@ -197,6 +220,8 @@ function coerceValue(value: string): unknown {
   return trimmed;
 }
 
+type ToolResolution = { kind: 'auto-correct'; tool: string } | { kind: 'suggest'; tool: string };
+
 async function invokeWithAutoCorrection(
   runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
@@ -232,23 +257,29 @@ async function attemptCall(
       throw error;
     }
 
-    const correction = await maybeAutoCorrectToolName(runtime, server, tool, error);
-    if (!correction || correction === tool) {
+    const resolution = await maybeResolveToolName(runtime, server, tool, error);
+    if (!resolution) {
+      throw error;
+    }
+
+    if (resolution.kind === 'suggest') {
+      // Provide a hint without mutating the call; this keeps surprising edits out of the request while teaching the right name.
+      console.error(dimText(`[mcporter] Did you mean ${server}.${resolution.tool}?`));
       throw error;
     }
 
     // Let the user know we silently retried with the canonical tool so they learn the proper name for next time.
-    console.log(dimText(`[mcporter] Auto-corrected tool call to ${server}.${correction} (input: ${tool}).`));
-    return attemptCall(runtime, server, correction, args, timeoutMs, false);
+    console.log(dimText(`[mcporter] Auto-corrected tool call to ${server}.${resolution.tool} (input: ${tool}).`));
+    return attemptCall(runtime, server, resolution.tool, args, timeoutMs, false);
   }
 }
 
-async function maybeAutoCorrectToolName(
+async function maybeResolveToolName(
   runtime: Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>,
   server: string,
   attemptedTool: string,
   error: unknown
-): Promise<string | undefined> {
+): Promise<ToolResolution | undefined> {
   const missingName = extractMissingToolFromError(error);
   if (!missingName) {
     return undefined;
@@ -279,7 +310,7 @@ function extractMissingToolFromError(error: unknown): string | undefined {
   return match?.[1];
 }
 
-function chooseClosestToolName(attempted: string, candidates: string[]): string | undefined {
+function chooseClosestToolName(attempted: string, candidates: string[]): ToolResolution | undefined {
   if (candidates.length === 0) {
     return undefined;
   }
@@ -296,11 +327,11 @@ function chooseClosestToolName(attempted: string, candidates: string[]): string 
     const normalizedCandidate = normalizeToolName(candidate);
 
     if (normalizedCandidate === normalizedAttempt) {
-      return candidate;
+      return { kind: 'auto-correct', tool: candidate };
     }
 
     if (candidate.toLowerCase() === attempted.toLowerCase()) {
-      return candidate;
+      return { kind: 'auto-correct', tool: candidate };
     }
 
     const score = levenshtein(normalizedAttempt, normalizedCandidate);
@@ -317,7 +348,10 @@ function chooseClosestToolName(attempted: string, candidates: string[]): string 
   const lengthBaseline = Math.max(normalizedAttempt.length, normalizeToolName(bestName).length, 1);
   // Require a reasonably low edit distance so we avoid "helpful" corrections that would surprise the caller.
   const threshold = Math.max(2, Math.floor(lengthBaseline * 0.3));
-  return bestScore <= threshold ? bestName : undefined;
+  if (bestScore <= threshold) {
+    return { kind: 'auto-correct', tool: bestName };
+  }
+  return { kind: 'suggest', tool: bestName };
 }
 
 function normalizeToolName(name: string): string {
