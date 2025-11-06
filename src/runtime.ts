@@ -16,7 +16,7 @@ import { createOAuthSession, type OAuthSession } from './oauth.js';
 import './sdk-patches.js';
 
 const PACKAGE_NAME = 'mcporter';
-const CLIENT_VERSION = '0.2.0';
+const CLIENT_VERSION = '0.3.0';
 
 export interface RuntimeOptions {
   readonly configPath?: string;

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import fsPromises from 'node:fs/promises';
 import { handleCall as runHandleCall } from './cli/call-command.js';
+import { inferCommandRouting } from './cli/command-inference.js';
 import { handleList } from './cli/list-command.js';
 import { formatSourceSuffix } from './cli/list-format.js';
 import { getActiveLogger, getActiveLogLevel, logError, logInfo, logWarn, setLogLevel } from './cli/logger-context.js';
@@ -64,19 +65,27 @@ async function main(): Promise<void> {
     logger: getActiveLogger(),
   });
 
+  const inference = inferCommandRouting(command, argv, runtime.getDefinitions());
+  if (inference.kind === 'abort') {
+    process.exitCode = inference.exitCode;
+    return;
+  }
+  const resolvedCommand = inference.command;
+  const resolvedArgs = inference.args;
+
   try {
-    if (command === 'list') {
-      await handleList(runtime, argv);
+    if (resolvedCommand === 'list') {
+      await handleList(runtime, resolvedArgs);
       return;
     }
 
-    if (command === 'call') {
-      await runHandleCall(runtime, argv);
+    if (resolvedCommand === 'call') {
+      await runHandleCall(runtime, resolvedArgs);
       return;
     }
 
-    if (command === 'auth') {
-      await handleAuth(runtime, argv);
+    if (resolvedCommand === 'auth') {
+      await handleAuth(runtime, resolvedArgs);
       return;
     }
   } finally {
@@ -117,7 +126,7 @@ async function main(): Promise<void> {
     }
   }
 
-  printHelp(`Unknown command '${command}'.`);
+  printHelp(`Unknown command '${resolvedCommand}'.`);
   process.exit(1);
 }
 

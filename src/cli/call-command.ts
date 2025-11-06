@@ -1,6 +1,7 @@
 import { createCallResult } from '../result-utils.js';
 import { type EphemeralServerSpec, persistEphemeralServer, resolveEphemeralServer } from './adhoc-server.js';
 import { parseCallExpressionFragment } from './call-expression-parser.js';
+import { chooseClosestIdentifier, normalizeIdentifier } from './identifier-helpers.js';
 import { type OutputFormat, printCallOutput, tailLogIfRequested } from './output-utils.js';
 import { dumpActiveHandles } from './runtime-debug.js';
 import { dimText } from './terminal.js';
@@ -422,7 +423,7 @@ async function maybeResolveToolName(
   }
 
   // Only attempt a suggestion if the server explicitly rejected the tool we tried.
-  if (normalizeToolName(missingName) !== normalizeToolName(attemptedTool)) {
+  if (normalizeIdentifier(missingName) !== normalizeIdentifier(attemptedTool)) {
     return undefined;
   }
 
@@ -431,10 +432,17 @@ async function maybeResolveToolName(
     return undefined;
   }
 
-  return chooseClosestToolName(
+  const resolution = chooseClosestIdentifier(
     attemptedTool,
     tools.map((entry) => entry.name)
   );
+  if (!resolution) {
+    return undefined;
+  }
+  if (resolution.kind === 'auto') {
+    return { kind: 'auto-correct', tool: resolution.value };
+  }
+  return { kind: 'suggest', tool: resolution.value };
 }
 
 function extractMissingToolFromError(error: unknown): string | undefined {
@@ -444,86 +452,4 @@ function extractMissingToolFromError(error: unknown): string | undefined {
   }
   const match = message.match(/Tool\s+([A-Za-z0-9._-]+)\s+not found/i);
   return match?.[1];
-}
-
-function chooseClosestToolName(attempted: string, candidates: string[]): ToolResolution | undefined {
-  if (candidates.length === 0) {
-    return undefined;
-  }
-
-  const normalizedAttempt = normalizeToolName(attempted);
-  let bestName: string | undefined;
-  let bestScore = Number.POSITIVE_INFINITY;
-
-  for (const candidate of candidates) {
-    if (candidate === attempted) {
-      continue;
-    }
-
-    const normalizedCandidate = normalizeToolName(candidate);
-
-    if (normalizedCandidate === normalizedAttempt) {
-      return { kind: 'auto-correct', tool: candidate };
-    }
-
-    if (candidate.toLowerCase() === attempted.toLowerCase()) {
-      return { kind: 'auto-correct', tool: candidate };
-    }
-
-    const score = levenshtein(normalizedAttempt, normalizedCandidate);
-    if (score < bestScore) {
-      bestScore = score;
-      bestName = candidate;
-    }
-  }
-
-  if (bestName === undefined) {
-    return undefined;
-  }
-
-  const lengthBaseline = Math.max(normalizedAttempt.length, normalizeToolName(bestName).length, 1);
-  // Require a reasonably low edit distance so we avoid "helpful" corrections that would surprise the caller.
-  const threshold = Math.max(2, Math.floor(lengthBaseline * 0.3));
-  if (bestScore <= threshold) {
-    return { kind: 'auto-correct', tool: bestName };
-  }
-  return { kind: 'suggest', tool: bestName };
-}
-
-function normalizeToolName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
-}
-
-function levenshtein(a: string, b: string): number {
-  if (a === b) {
-    return 0;
-  }
-  if (a.length === 0) {
-    return b.length;
-  }
-  if (b.length === 0) {
-    return a.length;
-  }
-
-  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
-  let current = Array.from<number, number>({ length: b.length + 1 }, () => 0);
-
-  for (let i = 1; i <= a.length; i += 1) {
-    current[0] = i;
-    const charA = a[i - 1];
-    for (let j = 1; j <= b.length; j += 1) {
-      const insertSource = current[j - 1];
-      const deleteSource = previous[j];
-      const replaceSource = previous[j - 1];
-      const insertCost = insertSource === undefined ? Number.POSITIVE_INFINITY : insertSource + 1;
-      const deleteCost = deleteSource === undefined ? Number.POSITIVE_INFINITY : deleteSource + 1;
-      const replaceCost =
-        (replaceSource === undefined ? Number.POSITIVE_INFINITY : replaceSource) + (charA === b[j - 1] ? 0 : 1);
-      current[j] = Math.min(insertCost, deleteCost, replaceCost);
-    }
-    [previous, current] = [current, previous];
-  }
-
-  const finalValue = previous[b.length];
-  return finalValue === undefined ? Number.POSITIVE_INFINITY : finalValue;
 }

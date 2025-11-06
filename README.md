@@ -72,6 +72,7 @@ npx mcporter call chrome-devtools.take_snapshot
 npx mcporter call 'linear.create_comment(issueId: "LNR-123", body: "Hello world")'
 npx mcporter call https://mcp.linear.app/mcp.list_issues assignee=me
 npx mcporter call linear.listIssues --tool listIssues   # auto-corrects to list_issues
+npx mcporter linear.list_issues                         # shorthand: infers `call`
 ```
 
 > Tool calls understand a JavaScript-like call syntax, auto-correct near-miss tool names, and emit richer inline usage hints. See [docs/call-syntax.md](docs/call-syntax.md) for the grammar and [docs/call-heuristic.md](docs/call-heuristic.md) for the auto-correction rules.
@@ -86,6 +87,8 @@ Helpful flags:
 - `--all-parameters` -- show every schema field when listing a server (default output shows at least five parameters plus a summary of the rest).
 - `--http-url <https://…>` / `--stdio "command …"` -- describe an ad-hoc MCP server inline (pair with `--env KEY=value`, `--cwd`, `--name`, and `--persist <config.json>` as needed).
 - For OAuth-protected servers such as `vercel`, run `npx mcporter auth vercel` once to complete login.
+
+> Tip: You can skip the verb entirely—`mcporter firecrawl` automatically runs `mcporter list firecrawl`, and dotted tokens like `mcporter linear.list_issues` dispatch to the call command (typo fixes included).
 
 Timeouts default to 30 s; override with `MCPORTER_LIST_TIMEOUT` or `MCPORTER_CALL_TIMEOUT` when you expect slow startups.
 

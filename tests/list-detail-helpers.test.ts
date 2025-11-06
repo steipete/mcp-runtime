@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { GeneratedOption } from '../src/cli/generate/tools.js';
-import { buildDocComment, selectDisplayOptions, wrapCommentText, formatOptionalSummary } from '../src/cli/list-detail-helpers.js';
+import {
+  buildDocComment,
+  formatOptionalSummary,
+  selectDisplayOptions,
+  wrapCommentText,
+} from '../src/cli/list-detail-helpers.js';
 
 const baseOption = (overrides: Partial<GeneratedOption> = {}): GeneratedOption => ({
   property: 'field',
@@ -42,7 +47,7 @@ describe('buildDocComment', () => {
     ];
     const lines = buildDocComment('List Vercel projects with lots of details.', options);
     expect(lines).toBeDefined();
-    const printable = lines!.map(stripAnsi);
+    const printable = (lines ?? []).map(stripAnsi);
     const separatorIndex = printable.findIndex((line) => line.trim() === '*');
     expect(separatorIndex).toBeGreaterThan(0);
     const paramLine = printable.find((line) => line.includes('@param teamId'));
@@ -63,5 +68,17 @@ describe('formatOptionalSummary', () => {
 });
 
 function stripAnsi(value: string): string {
-  return value.replace(/\u001B\[[0-9;]*m/g, '');
+  let result = '';
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '\u001B') {
+      index += 1;
+      while (index < value.length && value[index] !== 'm') {
+        index += 1;
+      }
+      continue;
+    }
+    result += char;
+  }
+  return result;
 }

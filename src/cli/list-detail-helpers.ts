@@ -81,7 +81,7 @@ function formatParamDoc(option: GeneratedOption, wrapWidth: number): string[] {
       if (suffix.length > 0) {
         const wrapped = wrapCommentText(suffix, wrapWidth - plainLabel.length - 1);
         if (wrapped.length > 0) {
-          lineParts.push(extraDimText(` ${wrapped[0]!}`));
+          lineParts.push(extraDimText(` ${wrapped[0]}`));
           rendered.push(lineParts.join(''));
           for (const continuation of wrapped.slice(1)) {
             rendered.push(`${continuationPrefix}${extraDimText(continuation)}`);
@@ -97,8 +97,12 @@ function formatParamDoc(option: GeneratedOption, wrapWidth: number): string[] {
       if (wrapped.length === 0) {
         return;
       }
-      rendered.push(`${continuationPrefix}${extraDimText(wrapped[0]!)}`);
-      for (const segment of wrapped.slice(1)) {
+      const [first, ...rest] = wrapped;
+      if (!first) {
+        return;
+      }
+      rendered.push(`${continuationPrefix}${extraDimText(first)}`);
+      for (const segment of rest) {
         rendered.push(`${continuationPrefix}${extraDimText(segment)}`);
       }
     }
@@ -127,10 +131,13 @@ export function wrapCommentText(text: string, maxWidth = DEFAULT_WRAP_WIDTH): st
     return [];
   }
   const lines: string[] = [];
-  let current = words[0]!;
+  let current = words[0] ?? '';
   for (let index = 1; index < words.length; index += 1) {
-    const word = words[index]!;
-    if ((current + ' ' + word).length > maxWidth) {
+    const word = words[index];
+    if (!word) {
+      continue;
+    }
+    if (`${current} ${word}`.length > maxWidth) {
       lines.push(current);
       current = word;
     } else {
