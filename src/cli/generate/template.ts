@@ -107,7 +107,6 @@ program.configureHelp({
 \t},
 });
 program.showSuggestionAfterError(true);
-program.addHelpText('beforeAll', () => renderStandaloneHelp());
 
 ${toolBlocks}
 
@@ -155,22 +154,22 @@ const tint = {
 };
 
 function renderStandaloneHelp(): string {
-const colorfulTitle = tint.bold(embeddedName) + ' ' + tint.dim('— ' + embeddedDescription);
-const plainTitle = embeddedName + ' — ' + embeddedDescription;
+	const colorfulTitle = tint.bold(embeddedName) + ' ' + tint.dim('— ' + embeddedDescription);
+	const plainTitle = embeddedName + ' — ' + embeddedDescription;
 	const title = supportsAnsiColor ? colorfulTitle : plainTitle;
 	const lines = [title, '', 'Usage: ' + embeddedName + ' <command> [options]', ''];
 	lines.push(...formatSection('Core commands', [
-			{
-				name: 'list-tools',
-				summary: 'List embedded tools and descriptions',
-				usage: embeddedName + ' list-tools',
-			},
-			{
-				name: '<tool>',
-				summary: 'Run a tool with key=value arguments (see list-tools for schemas)',
-				usage: embeddedName + ' <tool> key=value',
-			},
-		]));
+		{
+			name: 'list-tools',
+			summary: 'List embedded tools and descriptions',
+			usage: embeddedName + ' list-tools',
+		},
+		{
+			name: '<tool>',
+			summary: 'Run a tool with key=value arguments (see list-tools for schemas)',
+			usage: embeddedName + ' <tool> key=value',
+		},
+	]));
 	if (generatorTools) {
 		lines.push(formatEmbeddedTools());
 	}
@@ -181,6 +180,8 @@ const plainTitle = embeddedName + ' — ' + embeddedDescription;
 	return lines.join('\\n');
 }
 
+program.helpInformation = () => renderStandaloneHelp();
+
 function formatSection(title: string, entries: { name: string; summary: string; usage: string }[]): string[] {
 	const header = supportsAnsiColor ? tint.bold(title) : title;
 	const maxName = Math.max(...entries.map((entry) => entry.name.length));
@@ -189,15 +190,31 @@ function formatSection(title: string, entries: { name: string; summary: string; 
 		const padded = entry.name.padEnd(maxName);
 		const name = supportsAnsiColor ? tint.bold(padded) : padded;
 		const summary = supportsAnsiColor ? tint.dim(entry.summary) : entry.summary;
-		rendered.push('  ' + name + '  ' + summary);
-		rendered.push('    ' + tint.extraDim('usage:') + ' ' + entry.usage);
+		const usage = entry.usage
+			? supportsAnsiColor
+				? ' ' + tint.extraDim('(usage: ' + entry.usage + ')')
+				: ' (usage: ' + entry.usage + ')'
+			: '';
+		rendered.push('  ' + name + '  ' + summary + usage);
 	});
 	return [...rendered, ''];
 }
 
 function formatEmbeddedTools(): string {
 	const header = supportsAnsiColor ? tint.bold('Embedded tools') : 'Embedded tools';
-	return header + '\\n' + generatorTools;
+	if (!generatorTools) {
+		return header;
+	}
+	const entries = generatorTools.split('\\n').map((entry) => {
+		const parts = entry.split(' - ');
+		if (parts.length === 2) {
+			const [name, description] = parts;
+			const renderedDesc = supportsAnsiColor ? tint.extraDim(description) : description;
+			return name + ' - ' + renderedDesc;
+		}
+		return entry;
+	});
+	return header + '\\n' + entries.join('\\n');
 }
 
 function formatGlobalFlags(): string {
