@@ -140,6 +140,7 @@ export async function handleList(
       ok: 0,
       auth: 0,
       offline: 0,
+      http: 0,
       error: 0,
     };
     renderedResults.forEach((entry) => {
@@ -158,6 +159,7 @@ export async function handleList(
       okSummary,
       ...(errorCounts.auth > 0 ? [`${errorCounts.auth} auth required`] : []),
       ...(errorCounts.offline > 0 ? [`${errorCounts.offline} offline`] : []),
+      ...(errorCounts.http > 0 ? [`${errorCounts.http} http errors`] : []),
       ...(errorCounts.error > 0 ? [`${errorCounts.error} errors`] : []),
     ];
     console.log(`✔ Listed ${servers.length} server${servers.length === 1 ? '' : 's'} (${parts.join('; ')}).`);

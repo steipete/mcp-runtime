@@ -1,4 +1,4 @@
-import { analyzeConnectionError } from '../error-classifier.js';
+import { analyzeConnectionError, type ConnectionIssue } from '../error-classifier.js';
 import { wrapCallResult } from '../result-utils.js';
 import type { EphemeralServerSpec } from './adhoc-server.js';
 import { parseCallExpressionFragment } from './call-expression-parser.js';
@@ -293,7 +293,19 @@ export async function handleCall(
 
   const timeoutMs = resolveCallTimeout(parsed.timeoutMs);
   const hydratedArgs = await hydratePositionalArguments(runtime, server, tool, parsed.args, parsed.positionalArgs);
-  const { result } = await invokeWithAutoCorrection(runtime, server, tool, hydratedArgs, timeoutMs);
+  let invocation: { result: unknown; resolvedTool: string };
+  try {
+    invocation = await invokeWithAutoCorrection(runtime, server, tool, hydratedArgs, timeoutMs);
+  } catch (error) {
+    const issue = maybeReportConnectionIssue(server, tool, error);
+    if (parsed.output === 'json') {
+      emitConnectionIssueJson(server, tool, issue, error);
+      process.exitCode = 1;
+      return;
+    }
+    throw error;
+  }
+  const { result } = invocation;
 
   const { callResult: wrapped } = wrapCallResult(result);
   printCallOutput(wrapped, result, parsed.output);
@@ -548,25 +560,25 @@ function buildCallExpressionUsageError(error: unknown): CliUsageError {
   return new CliUsageError(lines.join('\n'));
 }
 
-function maybeReportConnectionIssue(server: string, tool: string, error: unknown): void {
+function maybeReportConnectionIssue(server: string, tool: string, error: unknown): ConnectionIssue | undefined {
   const issue = analyzeConnectionError(error);
   const detail = summarizeIssueMessage(issue.rawMessage);
   if (issue.kind === 'auth') {
     const authCommand = `mcporter auth ${server}`;
     const hint = `[mcporter] Authorization required for ${server}. Run '${authCommand}'.${detail ? ` (${detail})` : ''}`;
     console.error(yellowText(hint));
-    return;
+    return issue;
   }
   if (issue.kind === 'offline') {
     const hint = `[mcporter] ${server} appears offline${detail ? ` (${detail})` : ''}.`;
     console.error(redText(hint));
-    return;
+    return issue;
   }
   if (issue.kind === 'http') {
     const status = issue.statusCode ? `HTTP ${issue.statusCode}` : 'an HTTP error';
     const hint = `[mcporter] ${server}.${tool} responded with ${status}${detail ? ` (${detail})` : ''}.`;
     console.error(dimText(hint));
-    return;
+    return issue;
   }
   if (issue.kind === 'stdio-exit') {
     const exit = typeof issue.stdioExitCode === 'number' ? `code ${issue.stdioExitCode}` : 'an unknown status';
@@ -574,6 +586,7 @@ function maybeReportConnectionIssue(server: string, tool: string, error: unknown
     const hint = `[mcporter] STDIO server for ${server} exited with ${exit}${signal}.`;
     console.error(redText(hint));
   }
+  return issue;
 }
 
 function summarizeIssueMessage(message: string): string {
@@ -585,4 +598,44 @@ function summarizeIssueMessage(message: string): string {
     return trimmed;
   }
   return `${trimmed.slice(0, 117)}…`;
+}
+
+function emitConnectionIssueJson(
+  server: string,
+  tool: string,
+  issue: ConnectionIssue | undefined,
+  error: unknown
+): void {
+  const payload = {
+    server,
+    tool,
+    error: formatErrorMessage(error),
+    issue: issue
+      ? {
+          kind: issue.kind,
+          statusCode: issue.statusCode,
+          stdioExitCode: issue.stdioExitCode,
+          stdioSignal: issue.stdioSignal,
+          rawMessage: issue.rawMessage,
+        }
+      : undefined,
+  };
+  console.log(JSON.stringify(payload, null, 2));
+}
+
+function formatErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message ?? 'Unknown error';
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error === undefined || error === null) {
+    return 'Unknown error';
+  }
+  try {
+    return JSON.stringify(error);
+  } catch {
+    return 'Unknown error';
+  }
 }

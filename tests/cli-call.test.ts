@@ -288,6 +288,31 @@ describe('CLI call argument parsing', () => {
     errorSpy.mockRestore();
   });
 
+  it('emits structured JSON payloads for connection issues when --output json is set', async () => {
+    const { handleCall } = await cliModulePromise;
+    const failure = new Error('fetch failed: connect ECONNREFUSED 127.0.0.1:9999');
+    const runtime = {
+      callTool: vi.fn().mockRejectedValue(failure),
+      listTools: vi.fn(),
+      close: vi.fn().mockResolvedValue(undefined),
+    } as unknown as Awaited<ReturnType<typeof import('../src/runtime.js')['createRuntime']>>;
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    await expect(handleCall(runtime, ['linear.listIssues', '--output', 'json'])).resolves.toBeUndefined();
+
+    expect(errorSpy).toHaveBeenCalled();
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const payload = JSON.parse(logSpy.mock.calls[0]?.[0] ?? '{}');
+    expect(payload.server).toBe('linear');
+    expect(payload.issue.kind).toBe('offline');
+
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
+    process.exitCode = undefined;
+  });
+
   it('maps positional function arguments using schema order', async () => {
     const { handleCall } = await cliModulePromise;
     const callTool = vi.fn().mockResolvedValue({ ok: true });

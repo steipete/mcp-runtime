@@ -17,4 +17,10 @@ describe('classifyListError', () => {
     expect(result.category).toBe('offline');
     expect(result.summary).toBe('offline');
   });
+
+  it('classifies HTTP errors separately', () => {
+    const result = classifyListError(new Error('HTTP error 500: upstream unavailable'), 'remote', 30);
+    expect(result.category).toBe('http');
+    expect(result.summary).toContain('http 500');
+  });
 });

@@ -4,7 +4,7 @@ import type { ServerToolInfo } from '../runtime.js';
 import { formatPathForDisplay } from './path-utils.js';
 import { dimText, extraDimText, redText, yellowText } from './terminal.js';
 
-export type StatusCategory = 'ok' | 'auth' | 'offline' | 'error';
+export type StatusCategory = 'ok' | 'auth' | 'offline' | 'http' | 'error';
 
 export type ListSummaryResult =
   | {
@@ -93,6 +93,12 @@ export function classifyListError(
   if (issue.kind === 'offline') {
     const note = redText('offline — unable to reach server');
     return { colored: note, summary: 'offline', category: 'offline' };
+  }
+  if (issue.kind === 'http') {
+    const statusText = issue.statusCode ? `HTTP ${issue.statusCode}` : 'HTTP error';
+    const detail = issue.rawMessage && issue.rawMessage !== String(issue.statusCode) ? ` — ${issue.rawMessage}` : '';
+    const note = redText(`${statusText}${detail}`);
+    return { colored: note, summary: statusText.toLowerCase(), category: 'http' };
   }
   const rawMessage = issue.rawMessage || 'unknown error';
   const note = redText(rawMessage);
