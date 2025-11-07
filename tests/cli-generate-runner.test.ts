@@ -94,6 +94,15 @@ describe('generate-cli runner internals', () => {
     expect(spec.args).toEqual(['run', './cli.ts', '--stdio']);
   });
 
+  it('treats positional HTTPS URLs as ad-hoc servers and infers names', () => {
+    const args = ['https://mcp.context7.com/mcp'];
+    const parsed = generateInternals.parseGenerateFlags([...args]);
+    expect(parsed.command).toBe('https://mcp.context7.com/mcp');
+    expect(parsed.server).toBeUndefined();
+    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    expect(inferred).toBe('context7');
+  });
+
   it('builds regenerate commands honoring global flags and invocation overrides', () => {
     const definition: SerializedServerDefinition = {
       name: 'demo',
