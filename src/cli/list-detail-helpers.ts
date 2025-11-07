@@ -6,6 +6,27 @@ export interface SelectDisplayOptionsResult {
   hiddenOptions: GeneratedOption[];
 }
 
+export interface ToolDocInput {
+  serverName: string;
+  toolName: string;
+  description?: string;
+  outputSchema?: unknown;
+  options: GeneratedOption[];
+  requiredOnly: boolean;
+  colorize?: boolean;
+  exampleMaxLength?: number;
+}
+
+export interface ToolDocModel {
+  docLines?: string[];
+  signature: string;
+  tsSignature: string;
+  optionalSummary?: string;
+  examples: string[];
+  displayOptions: GeneratedOption[];
+  hiddenOptions: GeneratedOption[];
+}
+
 const DEFAULT_MIN_VISIBLE_PARAMS = 5;
 const DEFAULT_WRAP_WIDTH = 100;
 
@@ -38,53 +59,78 @@ export function selectDisplayOptions(
   return { displayOptions, hiddenOptions };
 }
 
-export function buildDocComment(description: string | undefined, options: GeneratedOption[]): string[] | undefined {
+export function buildDocComment(
+  description: string | undefined,
+  options: GeneratedOption[],
+  opts?: { colorize?: boolean }
+): string[] | undefined {
+  const colorize = opts?.colorize !== false;
   const descriptionLines = description?.split(/\r?\n/) ?? [];
   const paramDocs = options.filter((option) => option.description);
   if (descriptionLines.every((line) => line.trim().length === 0) && paramDocs.length === 0) {
     return undefined;
   }
+  const tint = colorize ? extraDimText : (value: string): string => value;
+  const highlightParam = colorize ? (value: string): string => yellowText(value) : (value: string): string => value;
+  const highlightName = colorize ? (value: string): string => cyanText(value) : (value: string): string => value;
   const lines: string[] = [];
-  lines.push(extraDimText('/**'));
+  lines.push(tint('/**'));
   let hasDescription = false;
   for (const line of descriptionLines) {
     const trimmed = line.trimEnd();
     if (trimmed.trim().length > 0) {
       const wrapped = wrapCommentText(trimmed);
       for (const segment of wrapped) {
-        lines.push(extraDimText(` * ${segment}`));
+        lines.push(tint(` * ${segment}`));
       }
       hasDescription = true;
     }
   }
   if (hasDescription && paramDocs.length > 0) {
-    lines.push(extraDimText(' *'));
+    lines.push(tint(' *'));
   }
   for (const option of paramDocs) {
-    const optionLines = formatParamDoc(option, DEFAULT_WRAP_WIDTH);
+    const optionLines = formatParamDoc(option, DEFAULT_WRAP_WIDTH, {
+      colorize,
+      highlightParam,
+      highlightName,
+      tint,
+    });
     lines.push(...optionLines);
   }
-  lines.push(extraDimText(' */'));
+  lines.push(tint(' */'));
   return lines;
 }
 
-function formatParamDoc(option: GeneratedOption, wrapWidth: number): string[] {
+function formatParamDoc(
+  option: GeneratedOption,
+  wrapWidth: number,
+  formatting: {
+    colorize: boolean;
+    highlightParam: (value: string) => string;
+    highlightName: (value: string) => string;
+    tint: (value: string) => string;
+  }
+): string[] {
+  const { colorize, highlightParam, highlightName, tint } = formatting;
   const descriptionLines = option.description?.split(/\r?\n/) ?? [''];
   const optionalSuffix = option.required ? '' : '?';
   const plainLabel = `@param ${option.property}${optionalSuffix}`;
-  const continuationPrefix = extraDimText(` * ${' '.repeat(plainLabel.length + 1)}`);
+  const continuationPrefix = colorize
+    ? extraDimText(` * ${' '.repeat(plainLabel.length + 1)}`)
+    : ` * ${' '.repeat(plainLabel.length + 1)}`;
   const rendered: string[] = [];
   descriptionLines.forEach((entry, index) => {
     const suffix = entry.trimEnd();
     if (index === 0) {
-      const lineParts = [extraDimText(' * '), yellowText('@param '), cyanText(`${option.property}${optionalSuffix}`)];
+      const lineParts = [colorize ? extraDimText(' * ') : ' * ', highlightParam('@param '), highlightName(`${option.property}${optionalSuffix}`)];
       if (suffix.length > 0) {
         const wrapped = wrapCommentText(suffix, wrapWidth - plainLabel.length - 1);
         if (wrapped.length > 0) {
-          lineParts.push(extraDimText(` ${wrapped[0]}`));
+          lineParts.push(colorize ? extraDimText(` ${wrapped[0]}`) : ` ${wrapped[0]}`);
           rendered.push(lineParts.join(''));
           for (const continuation of wrapped.slice(1)) {
-            rendered.push(`${continuationPrefix}${extraDimText(continuation)}`);
+            rendered.push(`${continuationPrefix}${colorize ? extraDimText(continuation) : continuation}`);
           }
           return;
         }
@@ -101,9 +147,9 @@ function formatParamDoc(option: GeneratedOption, wrapWidth: number): string[] {
       if (!first) {
         return;
       }
-      rendered.push(`${continuationPrefix}${extraDimText(first)}`);
+      rendered.push(`${continuationPrefix}${colorize ? extraDimText(first) : first}`);
       for (const segment of rest) {
-        rendered.push(`${continuationPrefix}${extraDimText(segment)}`);
+        rendered.push(`${continuationPrefix}${colorize ? extraDimText(segment) : segment}`);
       }
     }
   });
@@ -220,6 +266,41 @@ function truncateExample(example: string, maxLength: number): string {
   const shortened = args.slice(0, available).trimEnd().replace(/[\s,]+$/, '');
   const ellipsis = shortened.length > 0 ? `${shortened}, ...` : '...';
   return `${prefix}${ellipsis}${suffix}`;
+}
+
+export function buildToolDoc(input: ToolDocInput): ToolDocModel {
+  const {
+    serverName,
+    toolName,
+    description,
+    outputSchema,
+    options,
+    requiredOnly,
+    colorize = true,
+    exampleMaxLength,
+  } = input;
+  const { displayOptions, hiddenOptions } = selectDisplayOptions(options, requiredOnly);
+  const docLines = buildDocComment(description, options, { colorize });
+  const signature = formatFunctionSignature(toolName, displayOptions, outputSchema, { colorize });
+  const tsSignature = formatFunctionSignature(toolName, displayOptions, outputSchema, { colorize: false });
+  const optionalSummary = hiddenOptions.length > 0 ? formatOptionalSummary(hiddenOptions, { colorize }) : undefined;
+  const callExample = formatCallExpressionExample(
+    serverName,
+    toolName,
+    displayOptions.length > 0 ? displayOptions : options
+  );
+  const examples = callExample
+    ? formatExampleBlock([callExample], { maxExamples: 1, maxLength: exampleMaxLength ?? 80 })
+    : [];
+  return {
+    docLines,
+    signature,
+    tsSignature,
+    optionalSummary,
+    examples,
+    displayOptions,
+    hiddenOptions,
+  };
 }
 
 function formatInlineParameter(option: GeneratedOption, colorize: boolean): string {

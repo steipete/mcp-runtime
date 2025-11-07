@@ -7,12 +7,8 @@ import type { GeneratedOption } from './generate/tools.js';
 import { extractOptions } from './generate/tools.js';
 import { chooseClosestIdentifier } from './identifier-helpers.js';
 import {
-  buildDocComment,
-  formatCallExpressionExample,
+  buildToolDoc,
   formatExampleBlock,
-  formatFunctionSignature,
-  formatOptionalSummary,
-  selectDisplayOptions,
 } from './list-detail-helpers.js';
 import type { ListSummaryResult, StatusCategory } from './list-format.js';
 import { classifyListError, formatSourceSuffix, renderServerListRow } from './list-format.js';
@@ -215,9 +211,7 @@ export async function handleList(
     let optionalOmitted = false;
     for (const tool of tools) {
       const detail = printToolDetail(target, tool, Boolean(flags.schema), flags.requiredOnly);
-      if (detail.example) {
-        examples.push(detail.example);
-      }
+      examples.push(...detail.examples);
       optionalOmitted ||= detail.optionalOmitted;
     }
     const uniqueExamples = formatExampleBlock(examples);
@@ -258,7 +252,7 @@ function indent(text: string, pad: string): string {
 }
 
 interface ToolDetailResult {
-  example?: string;
+  examples: string[];
   optionalOmitted: boolean;
 }
 
@@ -306,26 +300,32 @@ function printToolDetail(
   requiredOnly: boolean
 ): ToolDetailResult {
   const options = extractOptions(tool as ServerToolInfo);
-  const { displayOptions, hiddenOptions } = selectDisplayOptions(options, requiredOnly);
-  const docLines = buildDocComment(tool.description, options);
-  if (docLines) {
-    for (const line of docLines) {
+  const doc = buildToolDoc({
+    serverName,
+    toolName: tool.name,
+    description: tool.description,
+    outputSchema: tool.outputSchema,
+    options,
+    requiredOnly,
+    colorize: true,
+  });
+  if (doc.docLines) {
+    for (const line of doc.docLines) {
       console.log(`  ${line}`);
     }
   }
-  console.log(`  ${formatFunctionSignature(tool.name, displayOptions, tool.outputSchema)}`);
-  if (hiddenOptions.length > 0 && requiredOnly) {
-    console.log(`  ${formatOptionalSummary(hiddenOptions)}`);
+  console.log(`  ${doc.signature}`);
+  if (doc.optionalSummary && requiredOnly) {
+    console.log(`  ${doc.optionalSummary}`);
   }
-
   if (includeSchema && tool.inputSchema) {
     // Schemas can be large — indenting keeps multi-line JSON legible without disrupting surrounding output.
     console.log(indent(JSON.stringify(tool.inputSchema, null, 2), '      '));
   }
   console.log('');
   return {
-    example: formatCallExpressionExample(serverName, tool.name, displayOptions.length > 0 ? displayOptions : options),
-    optionalOmitted: hiddenOptions.length > 0,
+    examples: doc.examples,
+    optionalOmitted: doc.hiddenOptions.length > 0,
   };
 }
 

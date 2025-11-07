@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { GeneratedOption } from '../src/cli/generate/tools.js';
 import {
   buildDocComment,
+  buildToolDoc,
   formatCallExpressionExample,
   formatFunctionSignature,
   formatOptionalSummary,
@@ -97,6 +98,30 @@ describe('formatCallExpressionExample', () => {
       baseOption({ property: 'parentId', required: false }),
     ]);
     expect(example).toBe('mcporter call linear.create_issue(title: "Bug", teamId: "example-id")');
+  });
+});
+
+describe('buildToolDoc', () => {
+  it('produces reusable doc blocks and summaries', () => {
+    const options = [
+      baseOption({ property: 'issueId', description: 'Issue identifier', required: true }),
+      baseOption({ property: 'body', description: 'Markdown body', required: true }),
+      baseOption({ property: 'parentId', description: 'Optional parent', required: false }),
+    ];
+    const doc = buildToolDoc({
+      serverName: 'linear',
+      toolName: 'create_comment',
+      description: 'Create a comment',
+      outputSchema: { title: 'Comment' },
+      options,
+      requiredOnly: true,
+      colorize: false,
+    });
+    expect(doc.signature).toBe('function create_comment(issueId: string, body: string, parentId?: string): Comment;');
+    expect(doc.tsSignature).toBe('function create_comment(issueId: string, body: string, parentId?: string): Comment;');
+    expect(doc.optionalSummary).toBeUndefined();
+    expect(doc.examples[0]).toContain('mcporter call linear.create_comment');
+    expect(doc.hiddenOptions).toHaveLength(0);
   });
 });
 

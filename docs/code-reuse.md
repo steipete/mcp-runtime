@@ -11,13 +11,14 @@ The goals below align `mcporter list`, the TypeScript CLI generator, and any fut
   3. Drop the duplicate `buildExampleInvocation/pickExampleValue` logic once Commander help uses the shared examples.
   4. Update the generator tests (in `tests/generate-cli.test.ts`) to expect the new syntax.
 
-## 2. Optional Summary in Generated Help
+## 2. Optional Summary in Generated Help *(Completed)*
 
 - **Problem**: The runtime CLI prints `// optional (n): …` while generated CLIs enumerate every flag.
-- **Plan**:
-  1. Add a `summarizeOptionalOptions()` helper (wrapping `formatOptionalSummary` + min-visible logic).
-  2. Modify `renderToolCommand()` to append a help block (e.g., `.addHelpText('afterAll', …)`) that reuses this summary, so both surfaces describe hidden params identically.
-  3. Gate the summary on the same “≥5 params” rule as `mcporter list` to avoid verbosity.
+- **What we did**:
+  1. Reused `selectDisplayOptions()` so both CLI/GH generator decide which params to display.
+  2. Added `formatOptionalSummary()` + `buildToolDoc()` wiring so each surface appends the same `// optional (…)` hint only when options were hidden.
+  3. Updated `renderToolCommand()` to include the shared hint via `.addHelpText('afterAll', …)` and aligned tests.
+- **Next**: No further action unless we change the minimum-visible threshold.
 
 ## 3. Consolidate Example Literal Selection
 
@@ -55,7 +56,7 @@ The goals below align `mcporter list`, the TypeScript CLI generator, and any fut
 
 Sequencing recommendation:
 1. Implement shared example helper (small change, immediate parity). **Done** – `list-detail-helpers.ts` now exports `formatExampleBlock`, `formatCallExpressionExample`, & the generator consumes them.
-2. Extract `ToolDocModel` + optional summary builder. **Next** – still TODO; default logic lives inline in the CLI and template.
+2. Extract `ToolDocModel` + optional summary builder. **Done** – `buildToolDoc` in `src/cli/list-detail-helpers.ts` now feeds both `handleList` and `renderToolCommand`.
 3. Update generator to consume the shared helpers (examples + optional summary + signatures). **In progress** – signatures/examples unified; `ToolDocModel` still pending.
 4. Add unit tests for the new helper module.
 5. Build the `--emit-ts` mode once reuse is in place.

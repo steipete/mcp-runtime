@@ -3,13 +3,7 @@ import path from 'node:path';
 import type { ServerDefinition } from '../../config.js';
 import type { GeneratedOption, ToolMetadata } from './tools.js';
 import { buildEmbeddedSchemaMap } from './tools.js';
-import {
-  formatCallExpressionExample,
-  formatExampleBlock,
-  formatFunctionSignature,
-  formatOptionalSummary,
-  selectDisplayOptions,
-} from '../list-detail-helpers.js';
+import { buildToolDoc } from '../list-detail-helpers.js';
 
 export interface TemplateInput {
   outputPath?: string;
@@ -228,19 +222,22 @@ export function renderToolCommand(
     })
     .join('\n\t\t');
   const signature = usageLine ? `${commandName} ${usageLine}` : commandName;
-  const tsSignature = formatFunctionSignature(tool.tool.name, tool.options, tool.tool.outputSchema, {
+  const doc = buildToolDoc({
+    serverName,
+    toolName: tool.tool.name,
+    description: tool.tool.description,
+    outputSchema: tool.tool.outputSchema,
+    options: tool.options,
+    requiredOnly: true,
     colorize: false,
   });
-  const exampleCall = formatCallExpressionExample(serverName, tool.tool.name, tool.options);
-  const exampleBlock = exampleCall ? formatExampleBlock([exampleCall], { maxExamples: 1, maxLength: 80 }) : [];
-  const exampleSnippet = exampleBlock.length
-    ? `\n\t.addHelpText('after', () => '\nExample:\n  ' + ${JSON.stringify(exampleBlock[0])})`
+  const tsSignature = doc.tsSignature;
+  const exampleText = doc.examples[0];
+  const exampleSnippet = exampleText
+    ? `\n\t.addHelpText('after', () => '\\nExample:\\n  ' + ${JSON.stringify(exampleText)})`
     : '';
-  const { hiddenOptions } = selectDisplayOptions(tool.options, true);
-  const optionalSummary = hiddenOptions.length > 0 ? formatOptionalSummary(hiddenOptions, { colorize: false }) : '';
-  // Matching `mcporter list`, add a compact optional-parameter hint so generated CLIs stay familiar.
-  const optionalSnippet = optionalSummary
-    ? `\n\t.addHelpText('afterAll', () => '\n${optionalSummary}\n')`
+  const optionalSnippet = doc.optionalSummary
+    ? `\n\t.addHelpText('afterAll', () => '\\n${doc.optionalSummary}\\n')`
     : '';
   const block = `program
 \t.command(${JSON.stringify(commandName)})
