@@ -93,7 +93,7 @@ describe('config imports', () => {
     expect(codexOnly?.command.kind === 'stdio' ? codexOnly.command.command : undefined).toBe('codex-cli');
     expect(codexOnly?.source).toEqual({
       kind: 'import',
-      path: path.join(FIXTURE_ROOT, 'home', '.codex', 'config.toml'),
+      path: path.join(fakeHomeDir!, '.codex', 'config.toml'),
     });
 
     const windsurfOnly = servers.find((server) => server.name === 'windsurf-only');
@@ -101,15 +101,18 @@ describe('config imports', () => {
     expect(windsurfOnly?.command.kind === 'stdio' ? windsurfOnly.command.command : undefined).toBe('windsurf-cli');
     expect(windsurfOnly?.source).toEqual({
       kind: 'import',
-      path: path.join(FIXTURE_ROOT, 'home', '.codeium', 'windsurf', 'mcp_config.json'),
+      path: path.join(fakeHomeDir!, '.codeium', 'windsurf', 'mcp_config.json'),
     });
 
     const vscodeOnly = servers.find((server) => server.name === 'vscode-only');
     expect(vscodeOnly?.command.kind).toBe('stdio');
     expect(vscodeOnly?.command.kind === 'stdio' ? vscodeOnly.command.command : undefined).toBe('code-mcp');
-    expect(vscodeOnly?.source).toEqual({
-      kind: 'import',
-      path: path.join(FIXTURE_ROOT, 'home', 'Library', 'Application Support', 'Code', 'User', 'mcp.json'),
-    });
+    const expectedVscodePaths = [
+      path.join(fakeHomeDir!, 'Library', 'Application Support', 'Code', 'User', 'mcp.json'),
+      path.join(fakeHomeDir!, '.config', 'Code', 'User', 'mcp.json'),
+      path.join(process.env.APPDATA ?? fakeHomeDir!, 'Code', 'User', 'mcp.json'),
+    ];
+    expect(vscodeOnly?.source?.kind).toBe('import');
+    expect(expectedVscodePaths).toContain(vscodeOnly?.source?.path);
   });
 });
