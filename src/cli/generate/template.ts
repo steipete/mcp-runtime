@@ -85,13 +85,16 @@ ${imports}
 const embeddedServer = ${embedded} as const;
 const embeddedSchemas = ${embeddedSchemas} as const;
 const embeddedName = ${JSON.stringify(serverName)};
+const embeddedDescription = ${JSON.stringify(
+    definition.description ?? `Standalone CLI for the ${serverName} MCP server.`
+  )};
 const generatorInfo = ${generatorHeaderLiteral};
 const generatorTools = ${toolHelpLiteral};
 const embeddedMetadata = ${embeddedMetadata} as const;
 const artifactKind = determineArtifactKind();
 const program = new Command();
 program.name(embeddedName);
-program.description('Standalone CLI generated for the ' + embeddedName + ' MCP server.');
+program.description(embeddedDescription);
 program.option('-c, --config <path>', 'Alternate mcporter.json path to load server definition.');
 program.option('-s, --server <name>', 'Alternate server name when using --config.');
 program.option('-t, --timeout <ms>', 'Call timeout in milliseconds', (value) => parseInt(value, 10), ${timeoutMs});
@@ -152,8 +155,8 @@ const tint = {
 };
 
 function renderStandaloneHelp(): string {
-	const colorfulTitle = tint.bold(embeddedName) + ' ' + tint.dim('— Standalone CLI for embedded MCP server');
-	const plainTitle = embeddedName + ' — Standalone CLI for embedded MCP server';
+const colorfulTitle = tint.bold(embeddedName) + ' ' + tint.dim('— ' + embeddedDescription);
+const plainTitle = embeddedName + ' — ' + embeddedDescription;
 	const title = supportsAnsiColor ? colorfulTitle : plainTitle;
 	const lines = [title, '', 'Usage: ' + embeddedName + ' <command> [options]', ''];
 	lines.push(...formatSection('Core commands', [
