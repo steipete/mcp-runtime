@@ -23,8 +23,6 @@ _Nothing yet._
 - Fixed `mcporter generate-cli --bundle/--compile` in empty directories by aliasing `commander`/`mcporter` imports to the CLI’s own installation so esbuild always resolves dependencies. Verified with a new fixture that bundles from temp dirs without `node_modules` (fixes #1).
 - Added an end-to-end integration test that runs `node dist/cli.js generate-cli` twice—once for bundling and once for `--compile`—as well as a GitHub Actions step that installs Bun so CI exercises the compiled binary path on every PR.
 
-### Release assets
-- Published the Bun build as `mcporter-macos-arm64-v0.3.1.tar.gz` alongside the npm release so Homebrew can point at the same artifact, with the SHA256 recorded in the release notes.
 
 ## [0.3.0] - 2025-11-06
 
