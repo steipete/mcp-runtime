@@ -1,15 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import type { GeneratedOption } from '../src/cli/generate/tools.js';
+import { buildToolDoc, selectDisplayOptions } from '../src/cli/list-detail-helpers.js';
+import { buildDocComment, wrapCommentText } from '../src/cli/list-doc-comments.js';
 import {
-  buildDocComment,
-  buildToolDoc,
   formatCallExpressionExample,
+  formatExampleBlock,
   formatFlagUsage,
   formatFunctionSignature,
   formatOptionalSummary,
-  selectDisplayOptions,
-  wrapCommentText,
-} from '../src/cli/list-detail-helpers.js';
+} from '../src/cli/list-signature.js';
 
 const baseOption = (overrides: Partial<GeneratedOption> = {}): GeneratedOption => ({
   property: 'field',
@@ -110,6 +109,22 @@ describe('formatCallExpressionExample', () => {
       baseOption({ property: 'parentId', required: false }),
     ]);
     expect(example).toBe('mcporter call linear.create_issue(title: "Bug", teamId: "example-id")');
+  });
+});
+
+describe('formatExampleBlock', () => {
+  it('dedupes and truncates long call hints', () => {
+    const lines = formatExampleBlock(
+      [
+        'mcporter call linear.create_issue(title: "Bug", teamId: "ENG", description: "Long description goes here")',
+        'mcporter call linear.create_issue(title: "Bug", teamId: "ENG", description: "Long description goes here")',
+        'mcporter call linear.create_issue(title: "Bug", teamId: "ENG")',
+      ],
+      { maxExamples: 2, maxLength: 60 }
+    );
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toContain('...');
+    expect(lines[1]).toContain('create_issue(');
   });
 });
 
