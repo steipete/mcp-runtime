@@ -4,7 +4,7 @@ import type { CliArtifactMetadata } from '../../cli-metadata.js';
 import { type HttpCommand, loadServerDefinitions, type ServerDefinition, type StdioCommand } from '../../config.js';
 import type { ServerToolInfo } from '../../runtime.js';
 import { createRuntime } from '../../runtime.js';
-import { extractHttpServerTarget, normalizeHttpUrl, normalizeHttpUrlCandidate } from '../http-utils.js';
+import { extractHttpServerTarget, normalizeHttpUrl } from '../http-utils.js';
 
 export interface ResolvedServer {
   definition: ServerDefinition;
@@ -255,15 +255,6 @@ function toCommandSpec(
     const httpCommand: HttpCommand = {
       kind: 'http',
       url: new URL(command),
-      ...(extra?.headers ? { headers: extra.headers } : {}),
-    };
-    return httpCommand;
-  }
-  const normalizedHttp = normalizeHttpUrlCandidate(command);
-  if (normalizedHttp) {
-    const httpCommand: HttpCommand = {
-      kind: 'http',
-      url: new URL(normalizedHttp),
       ...(extra?.headers ? { headers: extra.headers } : {}),
     };
     return httpCommand;
