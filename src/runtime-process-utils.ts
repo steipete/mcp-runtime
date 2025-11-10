@@ -196,8 +196,7 @@ async function listDescendantPids(rootPid: number): Promise<number[]> {
     return [];
   }
   if (process.platform === 'win32') {
-    // TODO: implement Windows process tree enumeration if/when needed.
-    return [];
+    return listDescendantPidsWindows(rootPid);
   }
 
   try {
@@ -219,23 +218,42 @@ async function listDescendantPids(rootPid: number): Promise<number[]> {
       children.set(ppid, bucket);
     }
 
-    const result: number[] = [];
-    const queue = [...(children.get(rootPid) ?? [])];
-    const seen = new Set<number>(queue);
-    while (queue.length > 0) {
-      const current = queue.shift();
-      if (current === undefined) {
+    return collectDescendantsFromChildren(rootPid, children);
+  } catch {
+    return [];
+  }
+}
+
+async function listDescendantPidsWindows(rootPid: number): Promise<number[]> {
+  try {
+    const powershellScript =
+      'Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId | ConvertTo-Json -Compress';
+    const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command', powershellScript]);
+    const trimmed = stdout.trim();
+    if (!trimmed) {
+      return [];
+    }
+    const parsed = JSON.parse(trimmed) as
+      | { ProcessId?: number; ParentProcessId?: number }
+      | Array<{ ProcessId?: number; ParentProcessId?: number }>;
+    const entries = Array.isArray(parsed) ? parsed : [parsed];
+    const children = new Map<number, number[]>();
+    for (const entry of entries) {
+      const pidCandidate = entry?.ProcessId;
+      const ppidCandidate = entry?.ParentProcessId;
+      if (typeof pidCandidate !== 'number' || typeof ppidCandidate !== 'number') {
         continue;
       }
-      result.push(current);
-      for (const child of children.get(current) ?? []) {
-        if (!seen.has(child)) {
-          seen.add(child);
-          queue.push(child);
-        }
+      const pid = Number.isFinite(pidCandidate) ? pidCandidate : undefined;
+      const ppid = Number.isFinite(ppidCandidate) ? ppidCandidate : undefined;
+      if (pid === undefined || ppid === undefined) {
+        continue;
       }
+      const bucket = children.get(ppid) ?? [];
+      bucket.push(pid);
+      children.set(ppid, bucket);
     }
-    return result;
+    return collectDescendantsFromChildren(rootPid, children);
   } catch {
     return [];
   }
@@ -257,6 +275,30 @@ async function collectProcessTreePids(rootPid: number): Promise<number[]> {
   const descendants = await listDescendantPids(rootPid);
   return [...descendants, rootPid];
 }
+
+function collectDescendantsFromChildren(rootPid: number, children: Map<number, number[]>): number[] {
+  const result: number[] = [];
+  const queue = [...(children.get(rootPid) ?? [])];
+  const seen = new Set<number>(queue);
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) {
+      continue;
+    }
+    result.push(current);
+    for (const child of children.get(current) ?? []) {
+      if (!seen.has(child)) {
+        seen.add(child);
+        queue.push(child);
+      }
+    }
+  }
+  return result;
+}
+
+export const __testHooks = {
+  listDescendantPids,
+};
 
 async function waitForTreeExit(pids: number[], durationMs: number): Promise<boolean> {
   const deadline = Date.now() + durationMs;

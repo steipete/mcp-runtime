@@ -5,6 +5,11 @@
 ### CLI & runtime
 - Added a per-login daemon that auto-starts when keep-alive MCP servers (e.g., Chrome DevTools, Mobile MCP, Playwright) are invoked. The daemon keeps STDIO transports alive across agents, exposes `mcporter daemon <start|status|stop>`, and supports idle shutdown plus manual restarts.
 - Keep-alive detection now honors the `lifecycle` config flag/env overrides and also inspects STDIO command signatures, so renaming `chrome-devtools` (or other stateful servers) no longer disables the daemon accidentally.
+- Windows imports now probe workspace `.cursor/mcp.json`, `%USERPROFILE%\\.cursor\\mcp.json`, `%APPDATA%\\Cursor\\User\\mcp.json`, `.vscode/mcp.json`, and the current Windsurf/Codeium directories so editor-managed MCP servers show up without manual copies on Windows machines.
+- Implemented Windows process-tree enumeration/termination (via `powershell.exe Get-CimInstance Win32_Process`) so closing stdio transports tears down the full process tree on Windows just like macOS/Linux, preventing orphaned child servers.
+
+### CI
+- Added a `windows-latest` job to the GitHub Actions workflow to run the same install/lint/build/test sequence as Linux, catching platform regressions before release.
 
 
 ## [0.4.5] - 2025-11-10
