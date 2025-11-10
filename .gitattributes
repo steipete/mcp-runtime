@@ -1,10 +1,1 @@
-* text=auto
-*.ts text eol=lf
-*.tsx text eol=lf
-*.js text eol=lf
-*.cjs text eol=lf
-*.mjs text eol=lf
-*.json text eol=lf
-*.md text eol=lf
-*.yml text eol=lf
-*.yaml text eol=lf
+* text eol=lf
