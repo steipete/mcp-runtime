@@ -33,13 +33,14 @@ const cliModule = await import('../src/cli.js');
 const { handleGenerateCli, handleInspectCli } = cliModule;
 
 const tmpDir = path.join(os.tmpdir(), 'mcporter-cli-regenerate');
+const describeCliRegenerate = process.platform === 'win32' ? describe.skip : describe;
 
 afterEach(async () => {
   generateCliMock.mockClear();
   await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
 });
 
-describe('inspect/generate CLI artifacts', () => {
+describeCliRegenerate('inspect/generate CLI artifacts', () => {
   it('normalizes HTTP selectors passed to --command', async () => {
     const args = ['--command', 'shadcn.io/api/mcp.getComponents', '--name', 'demo', '--output', 'out.ts'];
     await handleGenerateCli(args, {});

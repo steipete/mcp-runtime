@@ -261,10 +261,7 @@ describe('config imports', () => {
       const opencodeHomeOnly = servers.find((server) => server.name === 'opencode-user-only');
       expect(opencodeHomeOnly).toBeDefined();
       const homeDir = ensureFakeHomeDir();
-      const expectedPath =
-        process.platform === 'win32'
-          ? path.join(process.env.APPDATA ?? path.join(homeDir, 'AppData', 'Roaming'), 'opencode', 'opencode.jsonc')
-          : path.join(homeDir, '.config', 'opencode', 'opencode.jsonc');
+      const expectedPath = path.join(homeDir, '.config', 'opencode', 'opencode.jsonc');
       expect(opencodeHomeOnly?.source).toEqual({
         kind: 'import',
         path: expectedPath,

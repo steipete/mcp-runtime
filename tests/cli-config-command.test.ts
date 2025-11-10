@@ -190,7 +190,8 @@ describe('mcporter config CLI', () => {
     const output = logs.join('\n');
     expect(output).toContain('No local servers match');
     expect(output).toContain('Other sources available via --source import');
-    expect(output).toContain('.cursor/mcp.json');
+    const cursorPathPattern = /\.cursor[\\/]mcp\.json/;
+    expect(output).toMatch(cursorPathPattern);
     expect(output).toContain('cursor-only');
   });
 
