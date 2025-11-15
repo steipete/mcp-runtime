@@ -79,12 +79,25 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
   const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     socket.setEncoding('utf8');
     let buffer = '';
-    socket.on('data', (chunk) => {
-      buffer += chunk;
-    });
-    socket.on('end', () => {
+    let handled = false;
+    const tryHandle = () => {
+      if (handled) {
+        return;
+      }
+      const trimmed = buffer.trim();
+      if (trimmed.length === 0) {
+        return;
+      }
+      // Attempt to parse immediately; if it parses, handle the request now.
+      try {
+        JSON.parse(trimmed);
+      } catch {
+        // Not a complete JSON yet; wait for more data or 'end'
+        return;
+      }
+      handled = true;
       void handleSocketRequest(
-        buffer,
+        trimmed,
         socket,
         runtime,
         managedServers,
@@ -98,6 +111,16 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
         logContext,
         shutdown
       );
+    };
+    socket.on('data', (chunk) => {
+      buffer += chunk;
+      tryHandle();
+    });
+    socket.on('end', () => {
+      // Fallback: if we haven't handled yet, try now (for compatibility)
+      if (!handled) {
+        tryHandle();
+      }
     });
     socket.on('error', () => {
       socket.destroy();
@@ -183,7 +206,12 @@ async function handleSocketRequest(
   runtime: Runtime,
   managedServers: Map<string, ServerDefinition>,
   activity: Map<string, ServerActivity>,
-  metadata: { configPath: string; socketPath: string; startedAt: number; logPath: string | null },
+  metadata: {
+    configPath: string;
+    socketPath: string;
+    startedAt: number;
+    logPath: string | null;
+  },
   logContext: LogContext,
   shutdown: () => Promise<void>
 ): Promise<void> {
@@ -209,18 +237,29 @@ async function processRequest(
   runtime: Runtime,
   managedServers: Map<string, ServerDefinition>,
   activity: Map<string, ServerActivity>,
-  metadata: { configPath: string; socketPath: string; startedAt: number; logPath: string | null },
+  metadata: {
+    configPath: string;
+    socketPath: string;
+    startedAt: number;
+    logPath: string | null;
+  },
   logContext: LogContext
 ): Promise<{ response: DaemonResponse; shouldShutdown: boolean }> {
   const trimmed = rawPayload.trim();
   if (!trimmed) {
-    return { response: buildErrorResponse('unknown', 'empty_request'), shouldShutdown: false };
+    return {
+      response: buildErrorResponse('unknown', 'empty_request'),
+      shouldShutdown: false,
+    };
   }
   let request: DaemonRequest;
   try {
     request = JSON.parse(trimmed) as DaemonRequest;
   } catch (error) {
-    return { response: buildErrorResponse('unknown', 'invalid_json', error), shouldShutdown: false };
+    return {
+      response: buildErrorResponse('unknown', 'invalid_json', error),
+      shouldShutdown: false,
+    };
   }
   const id = request.id ?? 'unknown';
   try {
@@ -310,7 +349,10 @@ async function processRequest(
           if (loggable) {
             logEvent(logContext, `closeServer success server=${params.server}`);
           }
-          return { response: { id, ok: true, result: true }, shouldShutdown: false };
+          return {
+            response: { id, ok: true, result: true },
+            shouldShutdown: false,
+          };
         } catch (error) {
           if (loggable) {
             const detail = formatError(error);
@@ -339,13 +381,22 @@ async function processRequest(
       }
       case 'stop': {
         logEvent(logContext, 'Received stop request.');
-        return { response: { id, ok: true, result: true }, shouldShutdown: true };
+        return {
+          response: { id, ok: true, result: true },
+          shouldShutdown: true,
+        };
       }
       default:
-        return { response: buildErrorResponse(id, 'unknown_method'), shouldShutdown: false };
+        return {
+          response: buildErrorResponse(id, 'unknown_method'),
+          shouldShutdown: false,
+        };
     }
   } catch (error) {
-    return { response: buildErrorResponse(id, 'runtime_error', error), shouldShutdown: false };
+    return {
+      response: buildErrorResponse(id, 'runtime_error', error),
+      shouldShutdown: false,
+    };
   }
 }
 
@@ -429,7 +480,9 @@ function createLogContext(options: {
   if (derivedEnabled && options.logPath) {
     try {
       fsSync.mkdirSync(path.dirname(options.logPath), { recursive: true });
-      context.writer = fsSync.createWriteStream(options.logPath, { flags: 'a' });
+      context.writer = fsSync.createWriteStream(options.logPath, {
+        flags: 'a',
+      });
     } catch (error) {
       console.warn(`[daemon] Failed to open log file ${options.logPath}: ${(error as Error).message}`);
     }
