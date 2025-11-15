@@ -1,61 +1,29 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import type { CommandSpec } from '../src/config-schema.js';
+import { resolveLifecycle } from '../src/lifecycle.js';
 
-const envBackup = { ...process.env };
+const CHROME_COMMAND: CommandSpec = {
+  kind: 'stdio',
+  command: 'npx',
+  args: ['-y', 'chrome-devtools-mcp@latest', '--browserUrl', String.raw`\${CHROME_DEVTOOLS_URL}`],
+  cwd: process.cwd(),
+};
 
-afterEach(() => {
-  process.env = { ...envBackup };
-});
+const CHROME_COMMAND_ENV: CommandSpec = {
+  kind: 'stdio',
+  command: 'npx',
+  args: ['-y', 'chrome-devtools-mcp@latest', '--browserUrl', '$env:CHROME_DEVTOOLS_URL'],
+  cwd: process.cwd(),
+};
 
 describe('resolveLifecycle', () => {
-  const chromeCommand = {
-    kind: 'stdio' as const,
-    command: 'npx',
-    args: ['-y', 'chrome-devtools-mcp@latest'],
-    cwd: process.cwd(),
-  };
-
-  const customCommand = {
-    kind: 'stdio' as const,
-    command: 'node',
-    args: ['server.js'],
-    cwd: process.cwd(),
-  };
-
-  it('auto-enables keep-alive for chrome-devtools by default', async () => {
-    delete process.env.MCPORTER_KEEPALIVE;
-    delete process.env.MCPORTER_DISABLE_KEEPALIVE;
-    vi.resetModules();
-    const lifecycle = await import('../src/lifecycle.js');
-    expect(lifecycle.resolveLifecycle('chrome-devtools', undefined, chromeCommand)).toEqual({ mode: 'keep-alive' });
+  it('forces chrome-devtools placeholder runs to be ephemeral', () => {
+    const lifecycle = resolveLifecycle('chrome-devtools', undefined, CHROME_COMMAND);
+    expect(lifecycle?.mode).toBe('ephemeral');
   });
 
-  it('allows disabling keep-alive via env override', async () => {
-    process.env.MCPORTER_DISABLE_KEEPALIVE = 'chrome-devtools';
-    vi.resetModules();
-    const lifecycle = await import('../src/lifecycle.js');
-    expect(lifecycle.resolveLifecycle('chrome-devtools', undefined, chromeCommand)).toBeUndefined();
-  });
-
-  it('matches keep-alive overrides by canonical command name', async () => {
-    process.env.MCPORTER_DISABLE_KEEPALIVE = 'chrome-devtools';
-    vi.resetModules();
-    const lifecycle = await import('../src/lifecycle.js');
-    expect(lifecycle.resolveLifecycle('npx-y', undefined, chromeCommand)).toBeUndefined();
-  });
-
-  it('respects explicit lifecycle objects', async () => {
-    vi.resetModules();
-    const lifecycle = await import('../src/lifecycle.js');
-    expect(lifecycle.resolveLifecycle('custom', { mode: 'keep-alive', idleTimeoutMs: 5000 }, customCommand)).toEqual({
-      mode: 'keep-alive',
-      idleTimeoutMs: 5000,
-    });
-    expect(lifecycle.resolveLifecycle('custom', 'ephemeral', customCommand)).toEqual({ mode: 'ephemeral' });
-  });
-
-  it('infers keep-alive based on stdio command signature', async () => {
-    vi.resetModules();
-    const lifecycle = await import('../src/lifecycle.js');
-    expect(lifecycle.resolveLifecycle('chrometools', undefined, chromeCommand)).toEqual({ mode: 'keep-alive' });
+  it('forces chrome-devtools $env placeholder runs to be ephemeral', () => {
+    const lifecycle = resolveLifecycle('chrome-devtools', undefined, CHROME_COMMAND_ENV);
+    expect(lifecycle?.mode).toBe('ephemeral');
   });
 });

@@ -6,7 +6,7 @@ import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import type { CallToolRequest, ListResourcesRequest } from '@modelcontextprotocol/sdk/types.js';
 import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
-import { resolveEnvValue, withEnvOverrides } from './env.js';
+import { resolveEnvPlaceholders, resolveEnvValue, withEnvOverrides } from './env.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
 import { createOAuthSession, type OAuthSession } from './oauth.js';
 import { materializeHeaders } from './runtime-header-utils.js';
@@ -15,12 +15,14 @@ import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
 
 const PACKAGE_NAME = 'mcporter';
-const CLIENT_VERSION = '0.5.7';
+const CLIENT_VERSION = '0.5.8';
 const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
 const OAUTH_CODE_TIMEOUT_MS = parseOAuthTimeout(
   process.env.MCPORTER_OAUTH_TIMEOUT_MS ?? process.env.MCPORTER_OAUTH_TIMEOUT
 );
 export const MCPORTER_VERSION = CLIENT_VERSION;
+const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
+const ENV_PLACEHOLDER_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/;
 
 function parseOAuthTimeout(raw: string | undefined): number {
   if (!raw) {
@@ -117,6 +119,32 @@ export async function callOnce(params: {
   } finally {
     await runtime.close(params.server);
   }
+}
+
+function resolveCommandArgument(value: string): string {
+  if (!value) {
+    return value;
+  }
+  if (!value.includes('$')) {
+    return value;
+  }
+  const needsInterpolation = value.startsWith('$env:') || ENV_PLACEHOLDER_PATTERN.test(value);
+  if (!needsInterpolation) {
+    return value;
+  }
+  return resolveEnvPlaceholders(value);
+}
+
+function resolveCommandArguments(args: readonly string[]): string[] {
+  if (!args || args.length === 0) {
+    return [];
+  }
+  return args.map((arg) => resolveCommandArgument(arg));
+}
+
+function attachStdioTraceLogging(_transport: StdioClientTransport, _label?: string): void {
+  // STDIO instrumentation is handled via sdk-patches side effects. This helper remains
+  // so runtime callers can opt-in without sprinkling conditional checks everywhere.
 }
 
 class McpRuntime implements Runtime {
@@ -331,12 +359,22 @@ class McpRuntime implements Runtime {
             ? { ...process.env, ...resolvedEnvOverrides }
             : { ...process.env };
         const transport = new StdioClientTransport({
-          command: activeDefinition.command.command,
-          args: activeDefinition.command.args,
+          command: resolveCommandArgument(activeDefinition.command.command),
+          args: resolveCommandArguments(activeDefinition.command.args),
           cwd: activeDefinition.command.cwd,
           env: mergedEnv,
         });
-        await client.connect(transport);
+        if (STDIO_TRACE_ENABLED) {
+          attachStdioTraceLogging(transport, activeDefinition.name ?? activeDefinition.command.command);
+        }
+        try {
+          await client.connect(transport);
+        } catch (error) {
+          // Ensure STDIO transports are torn down when connect() fails so child processes
+          // (and their logged stdout/stderr) are not left running in the background.
+          await closeTransportAndWait(this.logger, transport).catch(() => {});
+          throw error;
+        }
         return { client, transport, definition: activeDefinition, oauthSession: undefined };
       }
 
@@ -506,6 +544,7 @@ export const __test = {
   isUnauthorizedError,
   waitForAuthorizationCodeWithTimeout,
   OAuthTimeoutError,
+  resolveCommandArgument,
 };
 
 // Race the pending OAuth browser handshake so the runtime can't sit on an unresolved promise forever.

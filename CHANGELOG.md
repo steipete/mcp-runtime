@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+_No changes yet._
+
+## [0.5.8] - 2025-11-15
+
 ### CLI & runtime
-- Runner guardrails now handle `sleep` invocations with missing/empty arguments without crashing, and summary-style selection no longer emits redundant cases, restoring `pnpm lint`/`pnpm typecheck` in local workflows.
+- STDIO transports now interpolate `${VAR}`/`$env:VAR` tokens in the configured command and arguments before spawning child processes, so chrome-devtools inherits the live `CHROME_DEVTOOLS_URL` value instead of receiving the literal placeholder.
+- Keep-alive detection skips any STDIO server whose command/args reference `CHROME_DEVTOOLS_URL`, ensuring daemon mode relaunches chrome-devtools for each Oracle browser session instead of pinning a stale port.
 
 ### CLI
 - Ad-hoc STDIO invocations that start with `npx -y <package>` now infer the npm package name (stripping versions and ignoring arguments after `--`) instead of producing slugs like `npx-y`, so repeated `mcporter list|call` runs automatically reuse a readable server key without passing `--name`.

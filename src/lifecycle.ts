@@ -21,6 +21,8 @@ const KEEP_ALIVE_COMMANDS: CommandSignature[] = [
   { label: 'playwright', fragments: ['@playwright/mcp', 'playwright/mcp'] },
 ];
 
+const CHROME_DEVTOOLS_URL_PLACEHOLDERS = [String.raw`\${CHROME_DEVTOOLS_URL}`, '$env:CHROME_DEVTOOLS_URL'];
+
 export function resolveLifecycle(
   name: string,
   rawLifecycle: RawLifecycle | undefined,
@@ -46,6 +48,11 @@ export function resolveLifecycle(
   if (lifecycle) {
     return lifecycle;
   }
+  if (commandRequiresDynamicChromePort(command)) {
+    // Each Chrome DevTools MCP instance is tied to a specific Chrome port. Opt out of keep-alive so
+    // the runtime (and daemon) relaunches the bridge whenever CHROME_DEVTOOLS_URL changes.
+    return { mode: 'ephemeral' };
+  }
   if (Array.from(candidateNames).some((candidate) => DEFAULT_KEEP_ALIVE.has(candidate))) {
     return { mode: 'keep-alive' };
   }
@@ -61,6 +68,14 @@ export function canonicalKeepAliveName(command: CommandSpec): string | undefined
     signature.fragments.some((fragment) => tokens.some((token) => token.includes(fragment)))
   );
   return match?.label;
+}
+
+function commandRequiresDynamicChromePort(command: CommandSpec): boolean {
+  if (command.kind !== 'stdio') {
+    return false;
+  }
+  const tokens = [command.command, ...command.args];
+  return tokens.some((token) => CHROME_DEVTOOLS_URL_PLACEHOLDERS.some((placeholder) => token.includes(placeholder)));
 }
 
 function parseList(value: string | undefined): OverrideSet {
