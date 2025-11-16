@@ -4,11 +4,15 @@
 
 _No changes yet._
 
+## [0.5.11] - 2025-11-16
+
+### Code generation & metadata
+- Quick start examples in generated CLIs now derive from actual embedded tools (up to three), showing real command names/flags instead of generic placeholders.
+
 ## [0.5.10] - 2025-11-16
 
 ### Code generation & metadata
 - Generated CLIs now present the canonical kebab-cased tool names in help while accepting underscore aliases at runtime, eliminating the “unknown command” errors when copying names directly from server tool lists.
-- Quick start examples in generated CLIs now derive from actual embedded tools (up to three), showing real command names/flags instead of generic placeholders.
 
 ## [0.5.9] - 2025-11-15
 
