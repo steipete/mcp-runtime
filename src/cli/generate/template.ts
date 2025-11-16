@@ -237,14 +237,34 @@ function formatGlobalFlags(): string {
 }
 
 function formatQuickStart(): string {
-	const header = supportsAnsiColor ? tint.bold('Quick start') : 'Quick start';
-	const examples = [
-		[embeddedName + ' <tool> key=value', 'invoke a tool with arguments'],
-		[embeddedName + ' <tool> key=value -o markdown', 'render markdown responses'],
-		[embeddedName + ' <tool> key=value --timeout 60000', 'increase timeout for long calls'],
-	];
-	const formatted = examples.map(([cmd, note]) => '  ' + cmd + '\\n    ' + tint.dim('# ' + note));
-	return [header, ...formatted].join('\\n');
+  const header = supportsAnsiColor ? tint.bold('Quick start') : 'Quick start';
+  const examples = quickStartExamples();
+  if (!examples.length) {
+    return header;
+  }
+  const formatted = examples.map(([cmd, note]) => '  ' + cmd + '\\n    ' + tint.dim('# ' + note));
+  return [header, ...formatted].join('\\n');
+}
+
+function quickStartExamples(): Array<[string, string]> {
+  const examples: Array<[string, string]> = [];
+  const commandMap = new Map<string, string>();
+  program.commands.forEach((cmd) => {
+    const name = cmd.name();
+    if (name !== '__mcporter_inspect') {
+      commandMap.set(name, name);
+    }
+  });
+  const embedded = Array.isArray(generatorTools) ? generatorTools : [];
+  for (const entry of embedded.slice(0, 3)) {
+    const commandName = commandMap.get(entry.name) ?? entry.name;
+    const flags = entry.flags ? ' ' + entry.flags.replace(/<[^>]+>/g, '<value>') : '';
+    examples.push([embeddedName + ' ' + commandName + flags, 'invoke ' + commandName]);
+  }
+  if (!examples.length) {
+    examples.push([embeddedName + ' <tool> --key value', 'invoke a tool with flags']);
+  }
+  return examples;
 }
 
 function printResult(result: unknown, format: string) {
