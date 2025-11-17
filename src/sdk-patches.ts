@@ -1,6 +1,7 @@
 import type { ChildProcess } from 'node:child_process';
 import type { PassThrough } from 'node:stream';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import type { JSONRPCMessage } from '@modelcontextprotocol/sdk/types.js';
 
 // Upstream TODO: Once typescript-sdk#579/#780/#1049 land, this shim can be dropped.
 // We monkey-patch the transport so child processes actually exit and their stdio
@@ -10,10 +11,15 @@ type MaybeChildProcess = ChildProcess & {
   stdio?: Array<unknown>;
 };
 
-interface StderrMeta {
-  chunks: string[];
+interface ProcessStreamMeta {
+  stderrChunks: string[];
+  stdoutChunks?: string[];
+  stdinChunks?: string[];
   command?: string;
   code?: number | null;
+  flushed?: boolean;
+  child?: MaybeChildProcess | null;
+  transport?: object;
   listeners: Array<{
     stream: NodeJS.EventEmitter & { removeListener?: (event: string, listener: (...args: unknown[]) => void) => void };
     event: string;
@@ -21,8 +27,51 @@ interface StderrMeta {
   }>;
 }
 
-const STDERR_BUFFERS = new WeakMap<MaybeChildProcess, StderrMeta>();
-const STDIO_LOGS_ENABLED = process.env.MCPORTER_STDIO_LOGS === '1';
+const PROCESS_BUFFERS = new WeakMap<MaybeChildProcess, ProcessStreamMeta>();
+const TRANSPORT_BUFFERS = new WeakMap<object, ProcessStreamMeta>();
+const STDIO_LOGS_FORCED = process.env.MCPORTER_STDIO_LOGS === '1';
+const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
+
+export type StdioLogMode = 'auto' | 'always' | 'silent';
+
+let stdioLogMode: StdioLogMode = STDIO_LOGS_FORCED ? 'always' : 'auto';
+
+export function getStdioLogMode(): StdioLogMode {
+  return stdioLogMode;
+}
+
+export function setStdioLogMode(mode: StdioLogMode): StdioLogMode {
+  const previous = stdioLogMode;
+  if (!STDIO_LOGS_FORCED) {
+    stdioLogMode = mode;
+  }
+  return previous;
+}
+
+export function evaluateStdioLogPolicy(
+  mode: StdioLogMode,
+  hasStderr: boolean,
+  exitCode: number | null | undefined
+): boolean {
+  if (!hasStderr) {
+    return false;
+  }
+  if (mode === 'silent') {
+    return false;
+  }
+  if (mode === 'always') {
+    return true;
+  }
+  return typeof exitCode === 'number' && exitCode !== 0;
+}
+
+function shouldPrintStdioLogs(meta: ProcessStreamMeta): boolean {
+  return evaluateStdioLogPolicy(stdioLogMode, meta.stderrChunks.length > 0, meta.code);
+}
+
+if (STDIO_TRACE_ENABLED) {
+  console.log('[mcporter] STDIO trace logging enabled (set MCPORTER_STDIO_TRACE=0 to disable).');
+}
 
 function destroyStream(stream: unknown): void {
   if (!stream || typeof stream !== 'object') {
@@ -119,6 +168,63 @@ function waitForChildClose(child: MaybeChildProcess | undefined, timeoutMs: numb
   });
 }
 
+function flushProcessLogs(_child: MaybeChildProcess, meta: ProcessStreamMeta): void {
+  if (meta.flushed) {
+    return;
+  }
+  meta.flushed = true;
+
+  if (STDIO_TRACE_ENABLED) {
+    const stderrChunks = meta.stderrChunks.length;
+    const stdoutChunks = meta.stdoutChunks?.length ?? 0;
+    const stdinChunks = meta.stdinChunks?.length ?? 0;
+    const label = meta.command ?? 'stdio server';
+    console.log(
+      `[mcporter] STDIO trace summary for ${label}: stdin=${stdinChunks} message(s), stdout=${stdoutChunks} chunk(s), stderr=${stderrChunks} chunk(s).`
+    );
+  }
+
+  for (const { stream, event, handler } of meta.listeners) {
+    try {
+      stream.removeListener?.(event, handler);
+    } catch {
+      // ignore
+    }
+  }
+  meta.listeners.length = 0;
+
+  if (shouldPrintStdioLogs(meta)) {
+    const heading = meta.command ? `[mcporter] stderr from ${meta.command}` : '[mcporter] stderr from stdio server';
+    console.log(heading);
+    process.stdout.write(meta.stderrChunks.join(''));
+    if (!meta.stderrChunks[meta.stderrChunks.length - 1]?.endsWith('\n')) {
+      console.log('');
+    }
+  }
+  if (STDIO_TRACE_ENABLED && meta.stdoutChunks && meta.stdoutChunks.length > 0) {
+    const heading = meta.command ? `[mcporter] stdout from ${meta.command}` : '[mcporter] stdout from stdio server';
+    console.log(heading);
+    process.stdout.write(meta.stdoutChunks.join(''));
+    if (!meta.stdoutChunks[meta.stdoutChunks.length - 1]?.endsWith('\n')) {
+      console.log('');
+    }
+  }
+  if (STDIO_TRACE_ENABLED && meta.stdinChunks && meta.stdinChunks.length > 0) {
+    const heading = meta.command ? `[mcporter] stdin to ${meta.command}` : '[mcporter] stdin to stdio server';
+    console.log(heading);
+    for (const entry of meta.stdinChunks) {
+      console.log(entry);
+    }
+  }
+
+  if (meta.child) {
+    PROCESS_BUFFERS.delete(meta.child);
+  }
+  if (meta.transport) {
+    TRANSPORT_BUFFERS.delete(meta.transport);
+  }
+}
+
 function patchStdioClose(): void {
   const marker = Symbol.for('mcporter.stdio.patched');
   const proto = StdioClientTransport.prototype as unknown as Record<symbol, unknown>;
@@ -138,7 +244,7 @@ function patchStdioClose(): void {
     };
     const child = transport._process ?? null;
     const stderrStream = transport._stderrStream ?? null;
-    const meta = child ? STDERR_BUFFERS.get(child) : undefined;
+    const meta = (child ? PROCESS_BUFFERS.get(child) : undefined) ?? TRANSPORT_BUFFERS.get(transport as object);
 
     if (stderrStream) {
       // Ensure any piped stderr stream is torn down so no file descriptors linger.
@@ -167,8 +273,6 @@ function patchStdioClose(): void {
     for (const stream of stdio) {
       destroyStream(stream);
     }
-
-    child.removeAllListeners?.();
 
     let exited = await waitForChildClose(child, 700).then(
       () => true,
@@ -211,24 +315,9 @@ function patchStdioClose(): void {
     child.unref?.();
 
     if (meta) {
-      // Remove any listeners we attached during start to avoid leaks before printing.
-      for (const { stream, event, handler } of meta.listeners) {
-        try {
-          stream.removeListener?.(event, handler);
-        } catch {
-          // ignore
-        }
-      }
-      const shouldPrint = STDIO_LOGS_ENABLED || (typeof meta.code === 'number' && meta.code !== 0);
-      if (shouldPrint && meta.chunks.length > 0) {
-        const heading = meta.command ? `[mcporter] stderr from ${meta.command}` : '[mcporter] stderr from stdio server';
-        console.log(heading);
-        process.stdout.write(meta.chunks.join(''));
-        if (!meta.chunks[meta.chunks.length - 1]?.endsWith('\n')) {
-          console.log('');
-        }
-      }
-      STDERR_BUFFERS.delete(child);
+      flushProcessLogs(meta.child ?? child, meta);
+    } else if (STDIO_TRACE_ENABLED) {
+      console.log('[mcporter] STDIO trace: attempted to close transport without recorded metadata.');
     }
 
     transport._process = null;
@@ -255,6 +344,10 @@ function patchStdioStart(): void {
       _stderrStream?: PassThrough | null;
     };
 
+    if (STDIO_TRACE_ENABLED) {
+      console.log('[mcporter] STDIO trace: start() invoked for stdio transport.');
+    }
+
     if (transport._serverParams && transport._serverParams.stderr !== 'pipe') {
       transport._serverParams = {
         ...transport._serverParams,
@@ -262,59 +355,144 @@ function patchStdioStart(): void {
       };
     }
 
-    await originalStart.apply(this);
+    const startPromise = originalStart.apply(this);
 
     const child = transport._process ?? null;
+    const meta: ProcessStreamMeta = {
+      stderrChunks: [],
+      stdoutChunks: STDIO_TRACE_ENABLED ? [] : undefined,
+      stdinChunks: STDIO_TRACE_ENABLED ? [] : undefined,
+      command: transport._serverParams?.command,
+      code: null,
+      listeners: [],
+      child,
+      transport,
+    };
+    TRANSPORT_BUFFERS.set(transport, meta);
     if (child) {
-      const meta: StderrMeta = {
-        chunks: [],
-        command: transport._serverParams?.command,
-        code: null,
-        listeners: [],
-      };
-      STDERR_BUFFERS.set(child, meta);
-
-      const targetStream = transport._stderrStream ?? child.stderr;
-      if (targetStream) {
-        if (typeof (targetStream as { setEncoding?: (enc: string) => void }).setEncoding === 'function') {
-          (targetStream as { setEncoding?: (enc: string) => void }).setEncoding?.('utf8');
-        }
-        const handleChunk = (chunk: unknown) => {
-          if (typeof chunk === 'string') {
-            meta.chunks.push(chunk);
-          } else if (Buffer.isBuffer(chunk)) {
-            meta.chunks.push(chunk.toString('utf8'));
-          }
-        };
-        const swallowError = () => {};
-        (targetStream as NodeJS.EventEmitter).on('data', handleChunk);
-        (targetStream as NodeJS.EventEmitter).on('error', swallowError);
-        meta.listeners.push({
-          stream: targetStream as NodeJS.EventEmitter & {
-            removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
-          },
-          event: 'data',
-          handler: handleChunk,
-        });
-        meta.listeners.push({
-          stream: targetStream as NodeJS.EventEmitter & {
-            removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
-          },
-          event: 'error',
-          handler: swallowError,
-        });
+      PROCESS_BUFFERS.set(child, meta);
+      if (STDIO_TRACE_ENABLED) {
+        const pid = typeof child.pid === 'number' ? child.pid : 'unknown';
+        console.log(`[mcporter] STDIO trace: spawned ${meta.command ?? 'stdio server'} (pid=${pid}).`);
       }
+    } else if (STDIO_TRACE_ENABLED) {
+      console.log(
+        `[mcporter] STDIO trace: transport for ${meta.command ?? 'stdio server'} exited before spawn listeners attached.`
+      );
+    }
 
+    const targetStream = transport._stderrStream ?? child?.stderr ?? null;
+    if (targetStream) {
+      if (typeof (targetStream as { setEncoding?: (enc: string) => void }).setEncoding === 'function') {
+        (targetStream as { setEncoding?: (enc: string) => void }).setEncoding?.('utf8');
+      }
+      const handleChunk = (chunk: unknown) => {
+        if (typeof chunk === 'string') {
+          meta.stderrChunks.push(chunk);
+        } else if (Buffer.isBuffer(chunk)) {
+          meta.stderrChunks.push(chunk.toString('utf8'));
+        }
+      };
+      const swallowError = () => {};
+      (targetStream as NodeJS.EventEmitter).on('data', handleChunk);
+      (targetStream as NodeJS.EventEmitter).on('error', swallowError);
+      meta.listeners.push({
+        stream: targetStream as NodeJS.EventEmitter & {
+          removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+        },
+        event: 'data',
+        handler: handleChunk,
+      });
+      meta.listeners.push({
+        stream: targetStream as NodeJS.EventEmitter & {
+          removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+        },
+        event: 'error',
+        handler: swallowError,
+      });
+    }
+
+    if (STDIO_TRACE_ENABLED && child?.stdout) {
+      const stdoutStream = child.stdout as NodeJS.EventEmitter & {
+        removeListener?: (event: string, listener: (...args: unknown[]) => void) => void;
+      };
+      const handleStdout = (chunk: unknown) => {
+        if (!meta.stdoutChunks) {
+          meta.stdoutChunks = [];
+        }
+        if (typeof chunk === 'string') {
+          meta.stdoutChunks.push(chunk);
+        } else if (Buffer.isBuffer(chunk)) {
+          meta.stdoutChunks.push(chunk.toString('utf8'));
+        }
+      };
+      const swallowStdoutError = () => {};
+      stdoutStream.on('data', handleStdout);
+      stdoutStream.on('error', swallowStdoutError);
+      meta.listeners.push({
+        stream: stdoutStream,
+        event: 'data',
+        handler: handleStdout,
+      });
+      meta.listeners.push({
+        stream: stdoutStream,
+        event: 'error',
+        handler: swallowStdoutError,
+      });
+    }
+
+    if (child) {
       child.once('exit', (code: number | null) => {
-        const entry = STDERR_BUFFERS.get(child);
+        const entry = PROCESS_BUFFERS.get(child);
         if (entry) {
           entry.code = code;
+          flushProcessLogs(child, entry);
         }
       });
     }
+
+    await startPromise;
   };
 
   proto[marker] = true;
 }
 
 patchStdioClose();
+patchStdioSend();
+
+function patchStdioSend(): void {
+  if (!STDIO_TRACE_ENABLED) {
+    return;
+  }
+  const marker = Symbol.for('mcporter.stdio.sendPatched');
+  const proto = StdioClientTransport.prototype as unknown as Record<symbol, unknown>;
+  if (proto[marker]) {
+    return;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/unbound-method -- capturing the original method before patching
+  const originalSend: typeof StdioClientTransport.prototype.send = StdioClientTransport.prototype.send;
+
+  StdioClientTransport.prototype.send = function patchedSend(this: unknown, message: JSONRPCMessage): Promise<void> {
+    if (STDIO_TRACE_ENABLED) {
+      try {
+        const transport = this as { _process?: MaybeChildProcess | null };
+        const child = transport._process ?? null;
+        if (child) {
+          const meta = PROCESS_BUFFERS.get(child);
+          if (meta) {
+            if (!meta.stdinChunks) {
+              meta.stdinChunks = [];
+            }
+            meta.stdinChunks.push(JSON.stringify(message));
+          }
+        }
+      } catch {
+        // ignore logging errors
+      }
+    }
+    return originalSend.call(this, message);
+  };
+
+  proto[marker] = true;
+}

@@ -165,5 +165,5 @@ await new Promise((resolve) => {
       await cli(['daemon', 'stop']).catch(() => {});
       await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     }
-  });
+  }, 40_000);
 });

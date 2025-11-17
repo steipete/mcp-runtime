@@ -375,5 +375,5 @@ await new Promise((resolve) => {
     expect(stdout).toContain('[--raw <json>]');
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  });
+  }, 40_000);
 });

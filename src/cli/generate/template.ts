@@ -77,17 +77,21 @@ export function renderTemplate({
       flagExtras: [{ text: '--raw <json>' }],
     }),
   }));
-  const toolHelp = toolDocs.map(({ tool, doc }) => ({
-    name: tool.tool.name,
-    description: tool.tool.description ?? '',
-    usage: doc.flagUsage ? `${tool.tool.name} ${doc.flagUsage}` : undefined,
-    flags: doc.flagUsage ?? '',
+  const renderedTools = toolDocs.map((entry) => ({
+    ...renderToolCommand(entry.tool, timeoutMs, serverName, entry.doc),
+    doc: entry.doc,
+    tool: entry.tool,
+  }));
+  const toolHelp = renderedTools.map((entry) => ({
+    name: entry.commandName,
+    description: entry.tool.tool.description ?? '',
+    usage: entry.doc.flagUsage ? `${entry.commandName} ${entry.doc.flagUsage}` : undefined,
+    flags: entry.doc.flagUsage ?? '',
   }));
   const generatorHeaderLiteral = JSON.stringify(generatorHeader);
   const toolHelpLiteral = JSON.stringify(toolHelp, undefined, 2);
   const embeddedSchemas = JSON.stringify(buildEmbeddedSchemaMap(tools), undefined, 2);
   const embeddedMetadata = JSON.stringify(metadata, undefined, 2);
-  const renderedTools = toolDocs.map((entry) => renderToolCommand(entry.tool, timeoutMs, serverName, entry.doc));
   const toolBlocks = renderedTools.map((entry) => entry.block).join('\n\n');
   const signatureMap = Object.fromEntries(renderedTools.map((entry) => [entry.commandName, entry.tsSignature]));
   const signatureMapLiteral = JSON.stringify(signatureMap, undefined, 2);
@@ -233,14 +237,34 @@ function formatGlobalFlags(): string {
 }
 
 function formatQuickStart(): string {
-	const header = supportsAnsiColor ? tint.bold('Quick start') : 'Quick start';
-	const examples = [
-		[embeddedName + ' <tool> key=value', 'invoke a tool with arguments'],
-		[embeddedName + ' <tool> key=value -o markdown', 'render markdown responses'],
-		[embeddedName + ' <tool> key=value --timeout 60000', 'increase timeout for long calls'],
-	];
-	const formatted = examples.map(([cmd, note]) => '  ' + cmd + '\\n    ' + tint.dim('# ' + note));
-	return [header, ...formatted].join('\\n');
+  const header = supportsAnsiColor ? tint.bold('Quick start') : 'Quick start';
+  const examples = quickStartExamples();
+  if (!examples.length) {
+    return header;
+  }
+  const formatted = examples.map(([cmd, note]) => '  ' + cmd + '\\n    ' + tint.dim('# ' + note));
+  return [header, ...formatted].join('\\n');
+}
+
+function quickStartExamples(): Array<[string, string]> {
+  const examples: Array<[string, string]> = [];
+  const commandMap = new Map<string, string>();
+  program.commands.forEach((cmd) => {
+    const name = cmd.name();
+    if (name !== '__mcporter_inspect') {
+      commandMap.set(name, name);
+    }
+  });
+  const embedded = Array.isArray(generatorTools) ? generatorTools : [];
+  for (const entry of embedded.slice(0, 3)) {
+    const commandName = commandMap.get(entry.name) ?? entry.name;
+    const flags = entry.flags ? ' ' + entry.flags.replace(/<[^>]+>/g, '<value>') : '';
+    examples.push([embeddedName + ' ' + commandName + flags, 'invoke ' + commandName]);
+  }
+  if (!examples.length) {
+    examples.push([embeddedName + ' <tool> --key value', 'invoke a tool with flags']);
+  }
+  return examples;
 }
 
 function printResult(result: unknown, format: string) {
@@ -426,14 +450,14 @@ export function renderToolCommand(
   const optionalSnippet = doc.optionalSummary
     ? `\n\t.addHelpText('afterAll', () => '\\n' + ${JSON.stringify(doc.optionalSummary)} + '\\n')`
     : '';
+  const aliasSnippet = tool.tool.name !== commandName ? `\n\t.alias(${JSON.stringify(tool.tool.name)})` : '';
   const block = `program
 \t.command(${JSON.stringify(commandName)})
 \t.summary(${JSON.stringify(summary)})
 \t.description(${JSON.stringify(description)})
-\t.description(${JSON.stringify(description)})
 ${usageSnippet ? `\t${usageSnippet}` : ''}\t.option('--raw <json>', 'Provide raw JSON arguments to the tool, bypassing flag parsing.')
 ${optionLines ? `\n${optionLines}` : ''}
-\t.action(async (cmdOpts) => {
+${aliasSnippet ? `\t${aliasSnippet}` : ''}\t.action(async (cmdOpts) => {
 \t\tconst globalOptions = program.opts();
 \t\tconst runtime = await ensureRuntime();
 \t\tconst serverName = embeddedName;

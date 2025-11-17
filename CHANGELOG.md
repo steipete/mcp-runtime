@@ -2,10 +2,40 @@
 
 ## [Unreleased]
 
-### CLI & runtime
-- _Nothing yet._
+_No changes yet._
+
+## [0.5.11] - 2025-11-16
+
+### Code generation & metadata
+- Quick start examples in generated CLIs now derive from actual embedded tools (up to three), showing real command names/flags instead of generic placeholders.
+
+## [0.5.10] - 2025-11-16
+
+### Code generation & metadata
+- Generated CLIs now present the canonical kebab-cased tool names in help while accepting underscore aliases at runtime, eliminating the “unknown command” errors when copying names directly from server tool lists.
+
+## [0.5.9] - 2025-11-15
 
 ### CLI
+- `mcporter list` suppresses raw STDIO stderr dumps when enumerating all configured servers, keeping the summary output readable while still surfacing per-server health statuses.
+- `mcporter config <subcommand> --help` (and `mcporter config help <subcommand>`) now display detailed usage, flags, and examples for every config subcommand instead of returning a placeholder message. Inline `--help` tokens are intercepted before executing the command, so flows like `mcporter config add --help` no longer throw usage errors.
+- `mcporter config doctor` prints the project and system config paths before reporting diagnostics, making it obvious which files were inspected when tracking down configuration issues.
+
+## [0.5.8] - 2025-11-15
+
+### CLI & runtime
+- STDIO transports now interpolate `${VAR}`/`$env:VAR` tokens in the configured command and arguments before spawning child processes, so chrome-devtools inherits the live `CHROME_DEVTOOLS_URL` value instead of receiving the literal placeholder.
+- Keep-alive detection skips any STDIO server whose command/args reference `CHROME_DEVTOOLS_URL`, ensuring daemon mode relaunches chrome-devtools for each Oracle browser session instead of pinning a stale port.
+- Command arguments that escape placeholders as `\${VAR}` (common when using `String.raw` in TypeScript config helpers) now trim the backslash after interpolation so downstream servers receive clean URLs.
+
+### CLI
+- Ad-hoc STDIO invocations that start with `npx -y <package>` now infer the npm package name (stripping versions and ignoring arguments after `--`) instead of producing slugs like `npx-y`, so repeated `mcporter list|call` runs automatically reuse a readable server key without passing `--name`.
+- Quoted inline commands such as `mcporter list "npx -y xcodebuildmcp"` now auto-detect the ad-hoc STDIO transport, so you can skip `--stdio` entirely when probing MCP packages via `npx`.
+
+## [0.5.7] - 2025-11-14
+
+### CLI
+- Added `mcporter daemon restart`, a stop+start convenience that reuses logging flags so agents can bounce the keep-alive daemon with a single command.
 - Added `list_tools` as a hidden shortcut for `mcporter list <server>`, so `chrome-devtools.list_tools` (and similar selectors) print the tool catalog instantly without requiring a real MCP tool.
 - Warn when colon-style arguments omit a value (e.g., `command:`) and suggest quoting/`--args` JSON so agents don’t accidentally send `undefined` to STDIO servers.
 

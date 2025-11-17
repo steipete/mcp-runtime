@@ -164,7 +164,7 @@ npx mcporter call --stdio "bun run ./local-server.ts" --name local-tools
 
 - `chrome-devtools`, `mobile-mcp`, and other stateful stdio servers auto-start a per-login daemon the first time you call them so Chrome tabs and device sessions stay alive between agents.
 - Use `mcporter daemon status` to check whether the daemon is running (and which servers are connected).
-- Stop it anytime with `mcporter daemon stop` (or `mcporter daemon start` to pre-warm before a long session).
+- Stop it anytime with `mcporter daemon stop`, pre-warm with `mcporter daemon start`, or bounce it via `mcporter daemon restart` after tweaking configs/env.
 - All other servers stay ephemeral; add `"lifecycle": "keep-alive"` to a server entry (or set `MCPORTER_KEEPALIVE=name`) when you want the daemon to manage it. You can also set `"lifecycle": "ephemeral"` (or `MCPORTER_DISABLE_KEEPALIVE=name`) to opt out.
 - The daemon only manages named servers that come from your config/imports. Ad-hoc STDIO/HTTP targets invoked via `--stdio …`, `--http-url …`, or inline function-call syntax remain per-process today; persist them into `config/mcporter.json` (or use `--persist`) if you need them to participate in the shared daemon.
 - Troubleshooting? Run `mcporter daemon start --log` (or `--log-file /tmp/daemon.log`) to tee stdout/stderr into a file, and add `--log-servers chrome-devtools` when you only want call traces for a specific MCP. Per-server configs can also set `"logging": { "daemon": { "enabled": true } }` to force detailed logging for that entry.

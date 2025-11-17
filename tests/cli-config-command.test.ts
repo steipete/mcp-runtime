@@ -177,7 +177,54 @@ describe('mcporter config CLI', () => {
     await handleConfigCli(buildOptions({ configPath }), ['doctor']);
     spy.mockRestore();
     expect(logs[0]).toBe(`MCPorter ${MCPORTER_VERSION}`);
-    expect(logs.join('\n')).toContain('Config looks good.');
+    expect(logs[1]).toMatch(/^Project config:/);
+    expect(logs[2]).toMatch(/^System config:/);
+    expect(logs[3]).toBe('');
+    expect(logs[4]).toBe('Config looks good.');
+  });
+
+  it('prints config locations before doctor issues', async () => {
+    await handleConfigCli(buildOptions({ configPath }), ['add', 'stdio-server', '--command', 'node --version']);
+    const absoluteSpy = vi.spyOn(path, 'isAbsolute').mockReturnValue(false);
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation(captureLog(logs));
+    await handleConfigCli(buildOptions({ configPath }), ['doctor']);
+    absoluteSpy.mockRestore();
+    spy.mockRestore();
+    expect(logs[0]).toBe(`MCPorter ${MCPORTER_VERSION}`);
+    expect(logs[1]).toMatch(/^Project config:/);
+    expect(logs[2]).toMatch(/^System config:/);
+    expect(logs[4]).toBe('Config issues detected:');
+    expect(logs[5]).toMatch(/non-absolute working directory/);
+  });
+
+  it('prints inline help for subcommands via --help', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation(captureLog(logs));
+    await handleConfigCli(buildOptions({ configPath }), ['add', '--help']);
+    spy.mockRestore();
+    const output = logs.join('\n');
+    expect(output).toContain('mcporter config add');
+    expect(output).toContain('Usage');
+    expect(output).toContain('--url <https://host>');
+  });
+
+  it('prints help for named subcommands via config help', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation(captureLog(logs));
+    await handleConfigCli(buildOptions({ configPath }), ['help', 'list']);
+    spy.mockRestore();
+    const output = logs.join('\n');
+    expect(output).toContain('mcporter config list');
+    expect(output).toContain('--source <local|import>');
+  });
+
+  it('warns when requesting help for unknown subcommands', async () => {
+    const logs: string[] = [];
+    const spy = vi.spyOn(console, 'log').mockImplementation(captureLog(logs));
+    await handleConfigCli(buildOptions({ configPath }), ['help', 'bogus']);
+    spy.mockRestore();
+    expect(logs.join('\n')).toContain("Unknown config subcommand 'bogus'");
   });
 
   it('lists only local entries by default and summarizes imports', async () => {

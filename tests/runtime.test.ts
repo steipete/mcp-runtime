@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadServerDefinitions } from '../src/config.js';
 import { resolveEnvPlaceholders, resolveEnvValue, withEnvOverrides } from '../src/env.js';
+import { __test as runtimeTestHelpers } from '../src/runtime.js';
 
 const FIXTURE_PATH = path.resolve(__dirname, 'fixtures', 'mcporter.json');
 
@@ -64,5 +65,30 @@ describe('environment utilities', () => {
       expect(process.env.SIGNOZ_URL).toBe('http://localhost:3301');
     });
     expect(process.env.SIGNOZ_URL).toBeUndefined();
+  });
+});
+
+describe('command argument interpolation', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('resolves placeholder tokens', () => {
+    process.env.CHROME_DEVTOOLS_URL = 'http://127.0.0.1:5555';
+    const placeholder = String.raw`\${CHROME_DEVTOOLS_URL}`;
+    const result = runtimeTestHelpers.resolveCommandArgument(`--browserUrl ${placeholder}`);
+    expect(result).toBe('--browserUrl http://127.0.0.1:5555');
+  });
+
+  it('passes through tokens without placeholders', () => {
+    const value = '--browserUrl';
+    const result = runtimeTestHelpers.resolveCommandArgument(value);
+    expect(result).toBe(value);
   });
 });

@@ -317,7 +317,7 @@ function buildCommandSections(colorize: boolean): string[] {
       entries: [
         {
           name: 'daemon',
-          summary: 'Manage the keep-alive daemon (start | status | stop)',
+          summary: 'Manage the keep-alive daemon (start | status | stop | restart)',
           usage: 'mcporter daemon <subcommand>',
         },
       ],

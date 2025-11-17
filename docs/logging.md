@@ -16,6 +16,8 @@ The keep-alive daemon can tee its stdout/stderr (and per-server call traces) int
 - `mcporter daemon start --log-file /tmp/mcporter-daemon.log` — write logs to a specific file (path is created if needed).
 - `mcporter daemon start --log-servers chrome-devtools,mobile-mcp` — only emit per-call entries for the listed servers. Without this flag, `--log` records every keep-alive server’s calls.
 
+`mcporter daemon restart` accepts the same logging flags, so you can bounce the daemon without retyping your tracing preferences.
+
 Foreground mode (`mcporter daemon start --foreground --log`) still prints to your terminal; the log file mirrors the same content.
 
 ### Environment overrides

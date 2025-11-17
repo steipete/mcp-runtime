@@ -41,6 +41,7 @@ read_when:
 - `mcporter daemon start [--foreground]`: boot the daemon; default behavior is background (detached) launch that writes its metadata file (`~/.mcporter/daemon.json` with PID/socket).
 - `mcporter daemon status`: show whether the daemon is running, the socket path, uptime, and which servers are currently connected/idle.
 - `mcporter daemon stop`: instruct the daemon to close all transports and remove its socket/metadata; if the daemon is missing, exit 0 with a hint.
+- `mcporter daemon restart`: convenience wrapper that stops the daemon (if it exists), waits for the socket to disappear, and launches a fresh instance while reusing the same logging flags/env overrides.
 - Existing commands (`list`, `call`, `auth`, `emit-ts`, etc.) continue to work; only those touching keep-alive servers will route through the daemon.
 
 ## Lifecycle & Fault Handling

@@ -4,6 +4,7 @@ import {
   type EphemeralServerSpec,
   persistEphemeralServer,
   resolveEphemeralServer,
+  splitCommandLine,
 } from './adhoc-server.js';
 import { looksLikeHttpUrl, normalizeHttpUrlCandidate } from './http-utils.js';
 import { findServerByHttpUrl } from './server-lookup.js';
@@ -49,6 +50,14 @@ export async function prepareEphemeralServerTarget(
 
   target = promoteUrlCandidate(target);
 
+  if (!spec) {
+    const inferredInline = inferInlineStdioSpec(target);
+    if (inferredInline) {
+      spec = inferredInline;
+      target = undefined;
+    }
+  }
+
   if (spec) {
     applyNameHints(spec, options.nameHints);
   }
@@ -92,5 +101,34 @@ function applyNameHints(spec: EphemeralServerSpec | undefined, hints: string[] |
     }
     spec.name = hint;
     break;
+  }
+}
+
+function inferInlineStdioSpec(target: string | undefined): EphemeralServerSpec | undefined {
+  if (!target) {
+    return undefined;
+  }
+  const trimmed = target.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  if (looksLikeHttpUrl(trimmed)) {
+    return undefined;
+  }
+  if (!trimmed.includes(' ')) {
+    return undefined;
+  }
+  try {
+    const parts = splitCommandLine(trimmed);
+    if (parts.length < 2) {
+      return undefined;
+    }
+    const executable = parts[0]?.split(/[\\/]/).pop();
+    if (executable !== 'npx') {
+      return undefined;
+    }
+    return { stdioCommand: trimmed };
+  } catch {
+    return undefined;
   }
 }

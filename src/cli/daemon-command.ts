@@ -45,17 +45,22 @@ export async function handleDaemonCli(args: string[], options: DaemonCliOptions)
     console.log('Daemon stopped (if it was running).');
     return;
   }
+  if (subcommand === 'restart') {
+    await handleDaemonRestart(args, options, client);
+    return;
+  }
 
   throw new Error(`Unknown daemon subcommand '${subcommand}'.`);
 }
 
 function printDaemonHelp(): void {
-  console.log(`Usage: mcporter daemon <start|status|stop>
+  console.log(`Usage: mcporter daemon <start|status|stop|restart>
 
 Commands:
   start    Start the keep-alive daemon (auto-detects keep-alive servers).
   status   Show whether the daemon is running and which servers are active.
   stop     Shut down the daemon and all managed servers.
+  restart  Stop the daemon (if running) and start a fresh instance.
 
 Flags:
   --foreground        Run the daemon in the current process (debug only).
@@ -124,6 +129,25 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
     throw new Error('Failed to start daemon before timeout expired.');
   }
   console.log(`Daemon started for ${keepAlive.length} server(s).`);
+}
+
+async function handleDaemonRestart(args: string[], options: DaemonCliOptions, client: DaemonClient): Promise<void> {
+  await client.stop();
+  console.log('Daemon stopped (if it was running).');
+
+  const stopped = await waitFor(
+    async () => {
+      const status = await client.status();
+      return status ? null : true;
+    },
+    5_000,
+    100
+  );
+  if (!stopped) {
+    throw new Error('Daemon did not stop before restart could begin.');
+  }
+
+  await handleDaemonStart(args, options, client);
 }
 
 async function handleDaemonStatus(client: DaemonClient): Promise<void> {

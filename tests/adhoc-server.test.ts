@@ -18,4 +18,32 @@ describe('resolveEphemeralServer', () => {
     expect(definition.lifecycle?.mode).toBe('keep-alive');
     expect(persistedEntry.lifecycle).toBe('keep-alive');
   });
+
+  it('infers package names instead of wrapper flags for npx workflows', () => {
+    const { definition } = resolveEphemeralServer({
+      stdioCommand: 'npx -y xcodebuildmcp',
+    });
+    expect(definition.name).toBe('xcodebuildmcp');
+  });
+
+  it('drops versions when inferring scoped npm package names', () => {
+    const { definition } = resolveEphemeralServer({
+      stdioCommand: 'npx -y @scope/example-mcp@latest',
+    });
+    expect(definition.name).toBe('scope-example-mcp');
+  });
+
+  it('ignores additional positional args after double-dash when inferring package names', () => {
+    const { definition } = resolveEphemeralServer({
+      stdioCommand: 'npx -y @scope/xcodebuildmcp@canary -- --port 1234',
+    });
+    expect(definition.name).toBe('scope-xcodebuildmcp');
+  });
+
+  it('normalizes mixed-case package tokens and --yes flag variants', () => {
+    const { definition } = resolveEphemeralServer({
+      stdioCommand: 'npx --yes XcodeBuildMCP@1.2.3 doctor',
+    });
+    expect(definition.name).toBe('xcodebuildmcp');
+  });
 });

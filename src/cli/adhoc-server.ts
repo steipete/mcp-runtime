@@ -138,6 +138,10 @@ function inferNameFromUrl(url: URL): string {
 }
 
 function inferNameFromCommand(parts: string[]): string {
+  const wrapperPackage = inferPackageFromWrapper(parts);
+  if (wrapperPackage) {
+    return wrapperPackage;
+  }
   const executable = path.basename(parts[0] ?? 'command');
   if (parts.length === 1) {
     return executable;
@@ -148,6 +152,45 @@ function inferNameFromCommand(parts: string[]): string {
   }
   const fallback = parts[1] ?? 'tool';
   return `${executable}-${fallback}`;
+}
+
+function inferPackageFromWrapper(parts: string[]): string | undefined {
+  if (parts.length < 2) {
+    return undefined;
+  }
+  const executable = path.basename(parts[0] ?? '');
+  if (executable !== 'npx') {
+    return undefined;
+  }
+  for (let index = 1; index < parts.length; index += 1) {
+    const token = parts[index];
+    if (!token) {
+      continue;
+    }
+    if (token === '--') {
+      break;
+    }
+    if (token.startsWith('-')) {
+      continue;
+    }
+    return stripPackageVersion(token);
+  }
+  return undefined;
+}
+
+function stripPackageVersion(token: string): string {
+  if (token.startsWith('@')) {
+    const secondAt = token.indexOf('@', 1);
+    if (secondAt !== -1) {
+      return token.slice(0, secondAt);
+    }
+    return token;
+  }
+  const versionAt = token.indexOf('@');
+  if (versionAt > 0) {
+    return token.slice(0, versionAt);
+  }
+  return token;
 }
 
 function slugify(value: string): string {

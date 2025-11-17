@@ -1,7 +1,7 @@
 import os from 'node:os';
 
 const ENV_DEFAULT_PATTERN = /^\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-|:|-)?([^}]*)\}$/;
-const ENV_INTERPOLATION_PATTERN = /\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
+const ENV_INTERPOLATION_PATTERN = /\\?\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
 const ENV_DIRECT_PREFIX = '$env:';
 
 // expandHome replaces a leading '~' with the current user's home directory.
