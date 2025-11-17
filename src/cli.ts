@@ -3,6 +3,7 @@ import fsPromises from 'node:fs/promises';
 
 import type { EphemeralServerSpec } from './cli/adhoc-server.js';
 import { handleCall as runHandleCall } from './cli/call-command.js';
+import { buildGlobalContext } from './cli/cli-factory.js';
 import { inferCommandRouting } from './cli/command-inference.js';
 import { handleConfigCli } from './cli/config-command.js';
 import { handleDaemonCli } from './cli/daemon-command.js';
@@ -10,13 +11,12 @@ import { handleEmitTs } from './cli/emit-ts-command.js';
 import { extractEphemeralServerFlags } from './cli/ephemeral-flags.js';
 import { prepareEphemeralServerTarget } from './cli/ephemeral-target.js';
 import { CliUsageError } from './cli/errors.js';
-import { extractFlags } from './cli/flag-utils.js';
 import { handleGenerateCli } from './cli/generate-cli-runner.js';
 import { looksLikeHttpUrl } from './cli/http-utils.js';
 import { handleInspectCli } from './cli/inspect-cli-command.js';
 import { buildConnectionIssueEnvelope } from './cli/json-output.js';
 import { handleList, printListHelp } from './cli/list-command.js';
-import { getActiveLogger, getActiveLogLevel, logError, logInfo, logWarn, setLogLevel } from './cli/logger-context.js';
+import { logError, logInfo, logWarn } from './cli/logger-context.js';
 import { consumeOutputFormat } from './cli/output-format.js';
 import { DEBUG_HANG, dumpActiveHandles, terminateChildProcesses } from './cli/runtime-debug.js';
 import { boldText, dimText, extraDimText, supportsAnsiColor } from './cli/terminal.js';
@@ -25,7 +25,6 @@ import { DaemonClient } from './daemon/client.js';
 import { createKeepAliveRuntime } from './daemon/runtime-wrapper.js';
 import { analyzeConnectionError } from './error-classifier.js';
 import { isKeepAliveServer } from './lifecycle.js';
-import { parseLogLevel } from './logging.js';
 import { createRuntime, MCPORTER_VERSION } from './runtime.js';
 
 export { parseCallArguments } from './cli/call-arguments.js';
@@ -43,29 +42,12 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  const globalFlags = extractFlags(args, ['--config', '--root', '--log-level', '--oauth-timeout']);
-  if (globalFlags['--log-level']) {
-    try {
-      const parsedLevel = parseLogLevel(globalFlags['--log-level'], getActiveLogLevel());
-      setLogLevel(parsedLevel);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logError(message, error instanceof Error ? error : undefined);
-      process.exit(1);
-      return;
-    }
+  const context = buildGlobalContext(args);
+  if ('exit' in context) {
+    process.exit(context.code);
+    return;
   }
-  let oauthTimeoutOverride: number | undefined;
-  if (globalFlags['--oauth-timeout']) {
-    // Shorten/extend the OAuth browser-wait so tests (or impatient humans) are not stuck for a full minute.
-    const parsed = Number.parseInt(globalFlags['--oauth-timeout'], 10);
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      logError("Flag '--oauth-timeout' must be a positive integer (milliseconds).");
-      process.exit(1);
-      return;
-    }
-    oauthTimeoutOverride = parsed;
-  }
+  const { globalFlags, runtimeOptions } = context;
   const command = args.shift();
 
   if (!command) {
@@ -85,29 +67,27 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
+  // Early-exit command handlers that don't require runtime inference.
   if (command === 'generate-cli') {
     await handleGenerateCli(args, globalFlags);
     return;
   }
-
   if (command === 'inspect-cli') {
     await handleInspectCli(args);
     return;
   }
-
   const rootOverride = globalFlags['--root'];
+  const configPath = runtimeOptions.configPath ?? globalFlags['--config'];
   const configResolution = resolveConfigPath(globalFlags['--config'], rootOverride ?? process.cwd());
-
-  const runtimeOptions = {
-    configPath: configResolution.explicit ? configResolution.path : undefined,
-    rootDir: rootOverride,
-    logger: getActiveLogger(),
-    oauthTimeoutMs: oauthTimeoutOverride,
+  const configPathResolved = configPath ?? configResolution.path;
+  const runtimeOptionsWithPath = {
+    ...runtimeOptions,
+    configPath: runtimeOptions.configPath ?? configPathResolved,
   };
 
   if (command === 'daemon') {
     await handleDaemonCli(args, {
-      configPath: configResolution.path,
+      configPath: configPathResolved,
       rootDir: rootOverride,
     });
     return;
@@ -116,8 +96,8 @@ export async function runCli(argv: string[]): Promise<void> {
   if (command === 'config') {
     await handleConfigCli(
       {
-        loadOptions: { configPath: runtimeOptions.configPath, rootDir: runtimeOptions.rootDir },
-        invokeAuth: (authArgs) => invokeAuthCommand(runtimeOptions, authArgs),
+        loadOptions: { configPath, rootDir: rootOverride },
+        invokeAuth: (authArgs) => invokeAuthCommand(runtimeOptionsWithPath, authArgs),
       },
       args
     );
@@ -125,7 +105,7 @@ export async function runCli(argv: string[]): Promise<void> {
   }
 
   if (command === 'emit-ts') {
-    const runtime = await createRuntime(runtimeOptions);
+    const runtime = await createRuntime(runtimeOptionsWithPath);
     try {
       await handleEmitTs(runtime, args);
     } finally {
@@ -134,7 +114,7 @@ export async function runCli(argv: string[]): Promise<void> {
     return;
   }
 
-  const baseRuntime = await createRuntime(runtimeOptions);
+  const baseRuntime = await createRuntime(runtimeOptionsWithPath);
   const keepAliveServers = new Set(
     baseRuntime
       .getDefinitions()

@@ -112,6 +112,17 @@
       "env": {
         "npm_config_loglevel": "error"
       }
+    },
+    "XcodeBuildMCP": {
+      "description": "XcodeBuild MCP server for building, testing, and inspecting Xcode projects and simulators.",
+      "command": "npx",
+      "args": [
+        "-y",
+        "xcodebuildmcp@latest"
+      ],
+      "env": {
+        "npm_config_loglevel": "error"
+      }
     }
   },
   "imports": [

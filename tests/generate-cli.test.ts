@@ -268,6 +268,49 @@ describeGenerateCli('generateCli', () => {
     // verification is covered in runtime integration tests.
   }, 60_000);
 
+  it('renders quick start examples from embedded tools', async () => {
+    const inline = JSON.stringify({
+      name: 'qs-demo',
+      description: 'Quick start demo',
+      command: baseUrl.toString(),
+    });
+    const outputPath = path.join(tmpDir, 'qs-demo.ts');
+    await fs.rm(outputPath, { force: true });
+
+    const { outputPath: renderedPath } = await generateCli({
+      serverRef: inline,
+      outputPath,
+      runtime: 'node',
+      timeoutMs: 5_000,
+    });
+    expect(renderedPath).toBe(outputPath);
+
+    const { execFile } = await import('node:child_process');
+    const { stdout } = await new Promise<{
+      stdout: string;
+      stderr: string;
+    }>((resolve, reject) => {
+      execFile(
+        'pnpm',
+        ['exec', 'tsx', renderedPath, '--help'],
+        execOptions(),
+        (error: import('node:child_process').ExecFileException | null, helpStdout: string, stderr: string) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout: helpStdout, stderr });
+        }
+      );
+    });
+
+    expect(stdout).toContain('Quick start');
+    // Should show real tool names (kebab-cased) instead of placeholders.
+    expect(stdout).toContain('qs-demo add');
+    expect(stdout).toContain('qs-demo list-comments');
+    expect(stdout).not.toContain('<tool> key=value');
+  });
+
   it('accepts both kebab-case and underscore tool names for generated CLIs', async () => {
     const deepwikiRef = JSON.stringify({
       name: 'deepwiki',

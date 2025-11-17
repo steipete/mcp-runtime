@@ -11,6 +11,8 @@ describe('CLI list flag parsing', () => {
       schema: true,
       timeoutMs: 7500,
       requiredOnly: true,
+      includeSources: false,
+      verbose: false,
       ephemeral: undefined,
       format: 'text',
     });
@@ -25,6 +27,8 @@ describe('CLI list flag parsing', () => {
       schema: false,
       timeoutMs: undefined,
       requiredOnly: false,
+      includeSources: false,
+      verbose: false,
       ephemeral: undefined,
       format: 'text',
     });

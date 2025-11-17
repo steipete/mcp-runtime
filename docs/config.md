@@ -51,14 +51,16 @@ mcporter keeps three configuration buckets in sync: repository-scoped JSON (`con
 
 ## Config Resolution Order
 
-mcporter always loads exactly one primary config file per run. The search order is:
+mcporter now merges home and project config files by default so global servers stay available inside repos. The order depends on how you invoke the CLI:
 
-1. The path passed via `--config <file>` (or programmatic `configPath`).
-2. The `MCPORTER_CONFIG` environment variable (handy for shell-wide defaults).
-3. `<root>/config/mcporter.json` inside the current project, if it exists.
-4. `~/.mcporter/mcporter.json` or `~/.mcporter/mcporter.jsonc` when the project file is missing.
+1. If you pass `--config <file>` (or set `--config` programmatically), only that file is used—no merging.
+2. If `MCPORTER_CONFIG` is set, only that file is used—no merging.
+3. Otherwise, mcporter loads both of these layers (when present):
+   - `~/.mcporter/mcporter.json` or `~/.mcporter/mcporter.jsonc`
+   - `<root>/config/mcporter.json`
+   Entries from the project file override entries with the same name from the home file. Each layer still pulls in its own imports before merging.
 
-All `mcporter config …` mutations write back to whichever file was selected. To maintain a system-wide config explicitly, run commands like `mcporter config --config ~/.mcporter/mcporter.json add <name> …`, or set `MCPORTER_CONFIG` in your shell profile so the CLI always targets that home-level file unless you override it.
+All `mcporter config …` mutations still write back to a single file: the explicit path when provided; otherwise the project config path (`<root>/config/mcporter.json`). To edit the home file explicitly, run commands like `mcporter config --config ~/.mcporter/mcporter.json add <name> …` or set `MCPORTER_CONFIG` in your shell profile.
 
 ## Discovery & Precedence
 mcporter builds a merged view of all known servers before executing any command. The sources load in this order:
@@ -76,6 +78,8 @@ Rules:
 
 ## CLI Workflows
 `mcporter config` is the entry point for reading and writing configuration files. Use the existing ad-hoc flags on `mcporter list|call|auth` when you want ephemeral definitions; once you’re ready to persist them, switch back to `mcporter config add`.
+
+Use `--scope home|project` with `mcporter config add` to pick the write target explicitly. `project` is always the default (creating `config/mcporter.json` if needed); `home` writes to `~/.mcporter/mcporter.json` even when a project config is present. `--persist <path>` still takes precedence when you need a custom file.
 
 ### `mcporter config list [filter]`
 - Shows **local** entries by default. Pass `--source import` to list imported editor configs, or `--json` for machine output.

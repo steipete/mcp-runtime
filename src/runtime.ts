@@ -1,39 +1,26 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import { createRequire } from 'node:module';
+
 import type { CallToolRequest, ListResourcesRequest } from '@modelcontextprotocol/sdk/types.js';
-import { ErrorCode, McpError } from '@modelcontextprotocol/sdk/types.js';
 import { loadServerDefinitions, type ServerDefinition } from './config.js';
-import { resolveEnvPlaceholders, resolveEnvValue, withEnvOverrides } from './env.js';
 import { createPrefixedConsoleLogger, type Logger, type LogLevel, resolveLogLevelFromEnv } from './logging.js';
-import { createOAuthSession, type OAuthSession } from './oauth.js';
-import { materializeHeaders } from './runtime-header-utils.js';
-import { isUnauthorizedError, maybeEnableOAuth } from './runtime-oauth-support.js';
 import { closeTransportAndWait } from './runtime-process-utils.js';
 import './sdk-patches.js';
+import { shouldResetConnection } from './runtime/errors.js';
+import { resolveOAuthTimeoutFromEnv } from './runtime/oauth.js';
+import { type ClientContext, createClientContext } from './runtime/transport.js';
+import { normalizeTimeout, raceWithTimeout } from './runtime/utils.js';
 
 const PACKAGE_NAME = 'mcporter';
-const CLIENT_VERSION = '0.5.11';
-const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
-const OAUTH_CODE_TIMEOUT_MS = parseOAuthTimeout(
-  process.env.MCPORTER_OAUTH_TIMEOUT_MS ?? process.env.MCPORTER_OAUTH_TIMEOUT
-);
+// Keep version in one place by reading package.json; fall back gracefully when bundled without it (e.g., bun bundle).
+const CLIENT_VERSION = (() => {
+  try {
+    return createRequire(import.meta.url)('../package.json').version as string;
+  } catch {
+    return process.env.MCPORTER_VERSION ?? '0.0.0-dev';
+  }
+})();
 export const MCPORTER_VERSION = CLIENT_VERSION;
-const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
-const ENV_PLACEHOLDER_PATTERN = /\$\{[A-Za-z_][A-Za-z0-9_]*\}/;
-
-function parseOAuthTimeout(raw: string | undefined): number {
-  if (!raw) {
-    return DEFAULT_OAUTH_CODE_TIMEOUT_MS;
-  }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return DEFAULT_OAUTH_CODE_TIMEOUT_MS;
-  }
-  return parsed;
-}
+const OAUTH_CODE_TIMEOUT_MS = resolveOAuthTimeoutFromEnv();
 
 export interface RuntimeOptions {
   readonly configPath?: string;
@@ -83,13 +70,6 @@ export interface ServerToolInfo {
   readonly outputSchema?: unknown;
 }
 
-interface ClientContext {
-  readonly client: Client;
-  readonly transport: Transport & { close(): Promise<void> };
-  readonly definition: ServerDefinition;
-  readonly oauthSession?: OAuthSession;
-}
-
 // createRuntime spins up a pooled MCP runtime from config JSON or provided definitions.
 export async function createRuntime(options: RuntimeOptions = {}): Promise<Runtime> {
   // Build the runtime with either the provided server list or the config file contents.
@@ -119,32 +99,6 @@ export async function callOnce(params: {
   } finally {
     await runtime.close(params.server);
   }
-}
-
-function resolveCommandArgument(value: string): string {
-  if (!value) {
-    return value;
-  }
-  if (!value.includes('$')) {
-    return value;
-  }
-  const needsInterpolation = value.startsWith('$env:') || ENV_PLACEHOLDER_PATTERN.test(value);
-  if (!needsInterpolation) {
-    return value;
-  }
-  return resolveEnvPlaceholders(value);
-}
-
-function resolveCommandArguments(args: readonly string[]): string[] {
-  if (!args || args.length === 0) {
-    return [];
-  }
-  return args.map((arg) => resolveCommandArgument(arg));
-}
-
-function attachStdioTraceLogging(_transport: StdioClientTransport, _label?: string): void {
-  // STDIO instrumentation is handled via sdk-patches side effects. This helper remains
-  // so runtime callers can opt-in without sprinkling conditional checks everywhere.
 }
 
 class McpRuntime implements Runtime {
@@ -229,8 +183,15 @@ class McpRuntime implements Runtime {
         name: toolName,
         arguments: options.args ?? {},
       };
-      const resultPromise = client.callTool(params);
+      // Forward the requested timeout to the MCP client so server-side requests don't hit the SDK's
+      // default 60s cap. Keep our own outer race as a second guard.
       const timeoutMs = normalizeTimeout(options.timeoutMs);
+      const resultPromise = client.callTool(params, undefined, {
+        timeout: timeoutMs,
+        // Long runs (e.g., GPT-5 Pro) emit progress/logging; allow that to refresh the timer.
+        resetTimeoutOnProgress: true,
+        maxTotalTimeout: timeoutMs,
+      });
       if (!timeoutMs) {
         return await resultPromise;
       }
@@ -274,7 +235,11 @@ class McpRuntime implements Runtime {
       throw new Error(`Unknown MCP server '${normalized}'.`);
     }
 
-    const connection = this.createClient(definition, options);
+    const connection = createClientContext(definition, this.logger, this.clientInfo, {
+      maxOAuthAttempts: options.maxOAuthAttempts,
+      oauthTimeoutMs: this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS,
+      onDefinitionPromoted: (promoted) => this.definitions.set(promoted.name, promoted),
+    });
 
     if (useCache) {
       this.clients.set(normalized, connection);
@@ -333,294 +298,6 @@ class McpRuntime implements Runtime {
       this.logger.warn(`Failed to reset '${normalized}' after error: ${detail}`);
     }
   }
-
-  // createClient wires up transports, optional OAuth sessions, and connects the MCP client.
-  private async createClient(definition: ServerDefinition, options: ConnectOptions = {}): Promise<ClientContext> {
-    // Create a fresh MCP client context for the target server.
-    const client = new Client(this.clientInfo);
-    let activeDefinition = definition;
-
-    return withEnvOverrides(activeDefinition.env, async () => {
-      if (activeDefinition.command.kind === 'stdio') {
-        // Resolve any ${VAR:-fallback} placeholders first so overrides remain deterministic even after
-        // we merge the caller's environment below.
-        const resolvedEnvOverrides =
-          activeDefinition.env && Object.keys(activeDefinition.env).length > 0
-            ? Object.fromEntries(
-                Object.entries(activeDefinition.env)
-                  .map(([key, raw]) => [key, resolveEnvValue(raw)])
-                  .filter(([, value]) => value !== '')
-              )
-            : undefined;
-        // Clone process.env so ad-hoc STDIO commands inherit the same environment as the invoking shell,
-        // then layer config/env overrides on top (without mutating the parent process.env).
-        const mergedEnv =
-          resolvedEnvOverrides && Object.keys(resolvedEnvOverrides).length > 0
-            ? { ...process.env, ...resolvedEnvOverrides }
-            : { ...process.env };
-        const transport = new StdioClientTransport({
-          command: resolveCommandArgument(activeDefinition.command.command),
-          args: resolveCommandArguments(activeDefinition.command.args),
-          cwd: activeDefinition.command.cwd,
-          env: mergedEnv,
-        });
-        if (STDIO_TRACE_ENABLED) {
-          attachStdioTraceLogging(transport, activeDefinition.name ?? activeDefinition.command.command);
-        }
-        try {
-          await client.connect(transport);
-        } catch (error) {
-          // Ensure STDIO transports are torn down when connect() fails so child processes
-          // (and their logged stdout/stderr) are not left running in the background.
-          await closeTransportAndWait(this.logger, transport).catch(() => {});
-          throw error;
-        }
-        return { client, transport, definition: activeDefinition, oauthSession: undefined };
-      }
-
-      // HTTP transports may need to retry once OAuth is auto-enabled.
-      while (true) {
-        const command = activeDefinition.command;
-        if (command.kind !== 'http') {
-          throw new Error(`Server '${activeDefinition.name}' is not configured for HTTP transport.`);
-        }
-        let oauthSession: OAuthSession | undefined;
-        const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
-        if (shouldEstablishOAuth) {
-          oauthSession = await createOAuthSession(activeDefinition, this.logger);
-        }
-
-        const resolvedHeaders = materializeHeaders(command.headers, activeDefinition.name);
-
-        const requestInit: RequestInit | undefined = resolvedHeaders
-          ? { headers: resolvedHeaders as HeadersInit }
-          : undefined;
-
-        const baseOptions = {
-          requestInit,
-          authProvider: oauthSession?.provider,
-        };
-
-        const attemptConnect = async () => {
-          const streamableTransport = new StreamableHTTPClientTransport(command.url, baseOptions);
-          try {
-            await this.connectWithAuth(
-              client,
-              streamableTransport,
-              oauthSession,
-              activeDefinition.name,
-              options.maxOAuthAttempts
-            );
-            return {
-              client,
-              transport: streamableTransport,
-              definition: activeDefinition,
-              oauthSession,
-            } as ClientContext;
-          } catch (error) {
-            await closeTransportAndWait(this.logger, streamableTransport).catch(() => {});
-            throw error;
-          }
-        };
-
-        try {
-          return await attemptConnect();
-        } catch (primaryError) {
-          if (isUnauthorizedError(primaryError)) {
-            await oauthSession?.close().catch(() => {});
-            oauthSession = undefined;
-            const promoted = maybeEnableOAuth(activeDefinition, this.logger);
-            if (promoted && options.maxOAuthAttempts !== 0) {
-              activeDefinition = promoted;
-              this.definitions.set(promoted.name, promoted);
-              continue;
-            }
-          }
-          if (primaryError instanceof OAuthTimeoutError) {
-            await oauthSession?.close().catch(() => {});
-            throw primaryError;
-          }
-          if (primaryError instanceof Error) {
-            this.logger.info(`Falling back to SSE transport for '${activeDefinition.name}': ${primaryError.message}`);
-          }
-          const sseTransport = new SSEClientTransport(command.url, {
-            ...baseOptions,
-          });
-          try {
-            await this.connectWithAuth(
-              client,
-              sseTransport,
-              oauthSession,
-              activeDefinition.name,
-              options.maxOAuthAttempts
-            );
-            return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
-          } catch (sseError) {
-            await closeTransportAndWait(this.logger, sseTransport).catch(() => {});
-            await oauthSession?.close().catch(() => {});
-            if (sseError instanceof OAuthTimeoutError) {
-              throw sseError;
-            }
-            if (isUnauthorizedError(sseError) && options.maxOAuthAttempts !== 0) {
-              const promoted = maybeEnableOAuth(activeDefinition, this.logger);
-              if (promoted) {
-                activeDefinition = promoted;
-                this.definitions.set(promoted.name, promoted);
-                continue;
-              }
-            }
-            throw sseError;
-          }
-        }
-      }
-    });
-  }
-
-  // connectWithAuth retries MCP connect calls while the OAuth flow progresses.
-  private async connectWithAuth(
-    client: Client,
-    transport: Transport & {
-      close(): Promise<void>;
-      finishAuth?: (authorizationCode: string) => Promise<void>;
-    },
-    session?: OAuthSession,
-    serverName?: string,
-    maxAttempts = 3
-  ): Promise<void> {
-    let attempt = 0;
-    while (true) {
-      try {
-        await client.connect(transport);
-        return;
-      } catch (error) {
-        if (!isUnauthorizedError(error) || !session) {
-          throw error;
-        }
-        attempt += 1;
-        if (attempt > maxAttempts) {
-          throw error;
-        }
-        this.logger.warn(
-          `OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`
-        );
-        try {
-          const code = await waitForAuthorizationCodeWithTimeout(
-            session,
-            this.logger,
-            serverName,
-            this.oauthTimeoutMs ?? OAUTH_CODE_TIMEOUT_MS
-          );
-          if (typeof transport.finishAuth === 'function') {
-            await transport.finishAuth(code);
-            this.logger.info('Authorization code accepted. Retrying connection...');
-          } else {
-            this.logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
-            throw error;
-          }
-        } catch (authError) {
-          this.logger.error('OAuth authorization failed while waiting for callback.', authError);
-          throw authError;
-        }
-      }
-    }
-  }
-}
-
-class OAuthTimeoutError extends Error {
-  public readonly timeoutMs: number;
-  public readonly serverName: string;
-
-  constructor(serverName: string, timeoutMs: number) {
-    const seconds = Math.round(timeoutMs / 1000);
-    super(`OAuth authorization for '${serverName}' timed out after ${seconds}s; aborting.`);
-    this.name = 'OAuthTimeoutError';
-    this.timeoutMs = timeoutMs;
-    this.serverName = serverName;
-  }
-}
-
-export const __test = {
-  maybeEnableOAuth,
-  isUnauthorizedError,
-  waitForAuthorizationCodeWithTimeout,
-  OAuthTimeoutError,
-  resolveCommandArgument,
-};
-
-// Race the pending OAuth browser handshake so the runtime can't sit on an unresolved promise forever.
-function waitForAuthorizationCodeWithTimeout(
-  session: OAuthSession,
-  logger: RuntimeLogger,
-  serverName?: string,
-  timeoutMs = OAUTH_CODE_TIMEOUT_MS
-): Promise<string> {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
-    return session.waitForAuthorizationCode();
-  }
-  const displayName = serverName ?? 'unknown';
-  return new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      const error = new OAuthTimeoutError(displayName, timeoutMs);
-      logger.warn(error.message);
-      reject(error);
-    }, timeoutMs);
-    session.waitForAuthorizationCode().then(
-      (code) => {
-        clearTimeout(timer);
-        resolve(code);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-}
-
-function normalizeTimeout(raw?: number): number | undefined {
-  if (raw == null) {
-    return undefined;
-  }
-  if (!Number.isFinite(raw)) {
-    return undefined;
-  }
-  const coerced = Math.trunc(raw);
-  return coerced > 0 ? coerced : undefined;
-}
-
-function raceWithTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      // Reject with a Timeout error; higher-level catch blocks decide whether to recycle the transport.
-      reject(new Error('Timeout'));
-    }, timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error) => {
-        clearTimeout(timer);
-        reject(error);
-      }
-    );
-  });
-}
-
-const NON_FATAL_MCP_ERROR_CODES = new Set([
-  ErrorCode.InvalidRequest,
-  ErrorCode.MethodNotFound,
-  ErrorCode.InvalidParams,
-]);
-
-function shouldResetConnection(error: unknown): boolean {
-  if (!error) {
-    return false;
-  }
-  if (error instanceof McpError) {
-    return !NON_FATAL_MCP_ERROR_CODES.has(error.code);
-  }
-  return error instanceof Error;
 }
 
 // createConsoleLogger produces the default runtime logger honoring MCPORTER_LOG_LEVEL.

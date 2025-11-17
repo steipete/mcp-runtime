@@ -107,6 +107,30 @@ describe('list output helpers', () => {
     expect(entry.authCommand).toBe(buildAuthCommandHint(definition));
   });
 
+  it('exposes source list in JSON only when includeSources is true', () => {
+    const withSources: ServerDefinition = {
+      ...definition,
+      source: { kind: 'local', path: '/project/config/mcporter.json' },
+      sources: [
+        { kind: 'local', path: '/project/config/mcporter.json' },
+        { kind: 'import', path: '/home/.cursor/mcp.json' },
+      ],
+    };
+    const summary: ListSummaryResult = {
+      status: 'ok',
+      server: withSources,
+      durationMs: 10,
+      tools: [],
+    };
+
+    const minimal = buildJsonListEntry(summary, 30, { includeSchemas: false });
+    expect(minimal.sources).toBeUndefined();
+
+    const verbose = buildJsonListEntry(summary, 30, { includeSchemas: false, includeSources: true });
+    expect(verbose.sources).toEqual(withSources.sources);
+    expect(verbose.source).toEqual(withSources.source);
+  });
+
   it('creates empty status counts with zeroed categories', () => {
     const counts = createEmptyStatusCounts();
     expect(counts).toEqual({ ok: 0, auth: 0, offline: 0, http: 0, error: 0 });

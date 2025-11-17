@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { buildGenerateCliCommand, __test as generateInternals } from '../src/cli/generate-cli-runner.js';
+import { parseGenerateFlags } from '../src/cli/generate/flags.js';
+import { inferNameFromCommand } from '../src/cli/generate/name-utils.js';
+import { buildGenerateCliCommand } from '../src/cli/generate/template-data.js';
 import type { SerializedServerDefinition } from '../src/cli-metadata.js';
 
 describe('generate-cli runner internals', () => {
@@ -13,7 +15,7 @@ describe('generate-cli runner internals', () => {
       '--compile',
       '--minify',
     ];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.server).toBe('linear');
     expect(parsed.command).toBe('https://example.com/mcp');
     expect(parsed.bundle).toBe(true);
@@ -23,64 +25,64 @@ describe('generate-cli runner internals', () => {
 
   it('normalizes inferred names from URLs', () => {
     const args = ['--command', 'https://api.linear.app/mcp.getComponents'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.command).toContain('https://');
-    const inferred = generateInternals.inferNameFromCommand(parsed.command ?? '');
+    const inferred = inferNameFromCommand(parsed.command ?? '');
     expect(inferred).toBe('linear');
   });
 
   it('splits stdio commands and infers names from args', () => {
     const args = ['--command', 'npx -y chrome-devtools-mcp@latest'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.command).toBeDefined();
     expect(typeof parsed.command).toBe('object');
     const spec = parsed.command as { command: string; args?: string[] };
     expect(spec.command).toBe('npx');
     expect(spec.args).toEqual(['-y', 'chrome-devtools-mcp@latest']);
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toContain('chrome-devtools');
   });
 
   it('parses local script commands with extra args', () => {
     const args = ['--command', 'bun run ./servers/local-cli.ts --stdio --name local'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     const spec = parsed.command as { command: string; args?: string[] };
     expect(spec.command).toBe('bun');
     expect(spec.args).toEqual(['run', './servers/local-cli.ts', '--stdio', '--name', 'local']);
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('local-cli');
   });
 
   it('infers package names from scoped arguments', () => {
     const args = ['--command', 'npx -y @demo/tools@latest serve'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     const spec = parsed.command as { command: string; args?: string[] };
     expect(spec.args).toEqual(['-y', '@demo/tools@latest', 'serve']);
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('demo-tools');
   });
 
   it('infers npm package names without version specifiers in inline commands', () => {
     const args = ['--command', 'npx -y chrome-devtools-mcp'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     const spec = parsed.command as { command: string; args?: string[] };
     expect(spec.args).toEqual(['-y', 'chrome-devtools-mcp']);
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('chrome-devtools-mcp');
   });
 
   it('normalizes scheme-less HTTP selectors passed to --command', () => {
     const args = ['--command', 'shadcn.io/api/mcp.getComponents'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(typeof parsed.command).toBe('string');
     expect((parsed.command as string).startsWith('https://')).toBe(true);
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('shadcn');
   });
 
   it('treats positional inline commands as generate-cli targets', () => {
     const args = ['npx -y chrome-devtools-mcp@latest'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.command).toBeDefined();
     expect(parsed.server).toBeUndefined();
     const spec = parsed.command as { command: string; args?: string[] };
@@ -90,14 +92,14 @@ describe('generate-cli runner internals', () => {
 
   it('keeps bare names positional when no whitespace is present', () => {
     const args = ['linear'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.server).toBe('linear');
     expect(parsed.command).toBeUndefined();
   });
 
   it('handles inline commands with extra interior whitespace', () => {
     const args = ['  bun   run   ./cli.ts   --stdio  '];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     const spec = parsed.command as { command: string; args?: string[] };
     expect(spec.command).toBe('bun');
     expect(spec.args).toEqual(['run', './cli.ts', '--stdio']);
@@ -105,10 +107,10 @@ describe('generate-cli runner internals', () => {
 
   it('treats positional HTTPS URLs as ad-hoc servers and infers names', () => {
     const args = ['https://mcp.context7.com/mcp'];
-    const parsed = generateInternals.parseGenerateFlags([...args]);
+    const parsed = parseGenerateFlags([...args]);
     expect(parsed.command).toBe('https://mcp.context7.com/mcp');
     expect(parsed.server).toBeUndefined();
-    const inferred = parsed.command !== undefined ? generateInternals.inferNameFromCommand(parsed.command) : undefined;
+    const inferred = parsed.command !== undefined ? inferNameFromCommand(parsed.command) : undefined;
     expect(inferred).toBe('context7');
   });
 

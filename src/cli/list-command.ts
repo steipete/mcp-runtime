@@ -32,10 +32,14 @@ export function extractListFlags(args: string[]): {
   requiredOnly: boolean;
   ephemeral?: EphemeralServerSpec;
   format: ListOutputFormat;
+  verbose: boolean;
+  includeSources: boolean;
 } {
   let schema = false;
   let timeoutMs: number | undefined;
   let requiredOnly = true;
+  let verbose = false;
+  let includeSources = false;
   const format = consumeOutputFormat(args, {
     defaultFormat: 'text',
     allowed: ['text', 'json'],
@@ -60,13 +64,23 @@ export function extractListFlags(args: string[]): {
       args.splice(index, 1);
       continue;
     }
+    if (token === '--verbose') {
+      verbose = true;
+      args.splice(index, 1);
+      continue;
+    }
+    if (token === '--sources') {
+      includeSources = true;
+      args.splice(index, 1);
+      continue;
+    }
     if (token === '--timeout') {
       timeoutMs = consumeTimeoutFlag(args, index, { flagName: '--timeout' });
       continue;
     }
     index += 1;
   }
-  return { schema, timeoutMs, requiredOnly, ephemeral, format };
+  return { schema, timeoutMs, requiredOnly, ephemeral, format, verbose, includeSources };
 }
 
 type ListOutputFormat = 'text' | 'json';
@@ -159,7 +173,7 @@ export async function handleList(
         })().then((result) => {
           summaryResults[index] = result;
           if (renderedResults) {
-            const rendered = renderServerListRow(result, perServerTimeoutMs);
+            const rendered = renderServerListRow(result, perServerTimeoutMs, { verbose: flags.verbose });
             renderedResults[index] = rendered;
             completedCount += 1;
             if (spinner) {
@@ -189,6 +203,7 @@ export async function handleList(
           const normalizedEntry = entry ?? createUnknownResult(serverDefinition);
           return buildJsonListEntry(normalizedEntry, perServerTimeoutSeconds, {
             includeSchemas: Boolean(flags.schema),
+            includeSources: Boolean(flags.verbose || flags.includeSources),
           });
         });
         const counts = summarizeStatusCounts(jsonEntries);
@@ -230,8 +245,8 @@ export async function handleList(
   const definition = resolved.definition;
   const timeoutMs = flags.timeoutMs ?? LIST_TIMEOUT_MS;
   const sourcePath =
-    definition.source?.kind === 'import' || definition.source?.kind === 'local'
-      ? formatSourceSuffix(definition.source, true)
+    definition.sources?.length || definition.source
+      ? formatSourceSuffix(definition.sources ?? definition.source, true, { verbose: flags.verbose })
       : undefined;
   const transportSummary = formatTransportSummary(definition);
   const startedAt = Date.now();
@@ -247,6 +262,7 @@ export async function handleList(
         description: definition.description,
         transport: transportSummary,
         source: definition.source,
+        sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
         tools: metadataEntries.map((entry) => ({
           name: entry.tool.name,
           description: entry.tool.description,
@@ -269,6 +285,7 @@ export async function handleList(
         description: definition.description,
         transport: transportSummary,
         source: definition.source,
+        sources: flags.verbose || flags.includeSources ? definition.sources : undefined,
         issue: advice.issue,
         authCommand: advice.authCommand,
         error: advice.summary,
@@ -359,6 +376,8 @@ export function printListHelp(): void {
     '  --schema               Show tool schemas when listing servers.',
     '  --all-parameters       Include optional parameters in tool docs.',
     '  --json                 Emit a JSON summary instead of text.',
+    '  --verbose              Show all config sources for matching servers.',
+    '  --sources              Include source arrays in JSON output without other verbose details.',
     '  --timeout <ms>         Override the per-server discovery timeout.',
     '',
     'Examples:',

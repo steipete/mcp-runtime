@@ -20,6 +20,7 @@ export interface ListJsonServerEntry {
   description?: string;
   transport?: string;
   source?: ServerDefinition['source'];
+  sources?: ServerDefinition['sources'];
   tools?: Array<{
     name: string;
     description?: string;
@@ -139,7 +140,7 @@ export function summarizeStatusCounts(entries: ListJsonServerEntry[]): Record<St
 export function buildJsonListEntry(
   result: ListSummaryResult,
   timeoutSeconds: number,
-  options: { includeSchemas: boolean }
+  options: { includeSchemas: boolean; includeSources?: boolean }
 ): ListJsonServerEntry {
   if (result.status === 'ok') {
     return {
@@ -153,6 +154,7 @@ export function buildJsonListEntry(
         >
       ),
       source: result.server.source,
+      sources: options.includeSources ? result.server.sources : undefined,
       tools: result.tools.map((tool) => ({
         name: tool.name,
         description: tool.description,
@@ -174,6 +176,7 @@ export function buildJsonListEntry(
       result.server as ReturnType<Awaited<ReturnType<typeof import('../runtime.js')['createRuntime']>>['getDefinition']>
     ),
     source: result.server.source,
+    sources: options.includeSources ? result.server.sources : undefined,
     issue: serializeConnectionIssue(advice.issue),
     authCommand: advice.authCommand,
     error: formatErrorMessage(result.error),

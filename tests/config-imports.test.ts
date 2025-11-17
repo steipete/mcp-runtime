@@ -104,6 +104,7 @@ describe('config imports', () => {
     expect(shared?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.cursor', 'mcp.json'),
+      importKind: 'cursor',
     });
 
     const cursorOnly = servers.find((server) => server.name === 'cursor-only');
@@ -133,6 +134,7 @@ describe('config imports', () => {
     expect(windsurfOnly?.source).toEqual({
       kind: 'import',
       path: path.join(homeDir, '.codeium', 'windsurf', 'mcp_config.json'),
+      importKind: 'windsurf',
     });
 
     const claudeLocal = servers.find((server) => server.name === 'claude-local');
@@ -141,6 +143,7 @@ describe('config imports', () => {
     expect(claudeLocal?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.claude', 'settings.local.json'),
+      importKind: 'claude-code',
     });
 
     const claudeOverridden = servers.find((server) => server.name === 'claude-overridden');
@@ -151,6 +154,7 @@ describe('config imports', () => {
     expect(claudeOverridden?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.claude', 'settings.local.json'),
+      importKind: 'claude-code',
     });
 
     const claudeShared = servers.find((server) => server.name === 'claude-shared');
@@ -159,6 +163,7 @@ describe('config imports', () => {
     expect(claudeShared?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, '.claude', 'settings.json'),
+      importKind: 'claude-code',
     });
 
     const claudeHome = servers.find((server) => server.name === 'claude-home');
@@ -167,6 +172,7 @@ describe('config imports', () => {
     expect(claudeHome?.source).toEqual({
       kind: 'import',
       path: path.join(homeDir, '.claude', 'settings.json'),
+      importKind: 'claude-code',
     });
 
     const opencodeOnly = servers.find((server) => server.name === 'opencode-only');
@@ -175,6 +181,7 @@ describe('config imports', () => {
     expect(opencodeOnly?.source).toEqual({
       kind: 'import',
       path: path.join(FIXTURE_ROOT, 'opencode.jsonc'),
+      importKind: 'opencode',
     });
 
     const vscodeOnly = servers.find((server) => server.name === 'vscode-only');
@@ -204,6 +211,7 @@ describe('config imports', () => {
       expect(claudeHome?.source).toEqual({
         kind: 'import',
         path: path.join(ensureFakeHomeDir(), '.claude', 'settings.json'),
+        importKind: 'claude-code',
       });
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -262,6 +270,7 @@ describe('config imports', () => {
       expect(projectServer?.source).toEqual({
         kind: 'import',
         path: claudeJsonPath,
+        importKind: 'claude-code',
       });
       const serverNames = servers.map((server) => server.name);
       expect(serverNames).not.toContain('tipsHistory');
@@ -289,6 +298,7 @@ describe('config imports', () => {
       expect(codexOnly?.source).toEqual({
         kind: 'import',
         path: path.join(homeDir, '.codex', 'config.toml'),
+        importKind: 'codex',
       });
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -304,6 +314,7 @@ describe('config imports', () => {
       expect(codexOnly?.source).toEqual({
         kind: 'import',
         path: path.join(ensureFakeHomeDir(), '.codex', 'config.toml'),
+        importKind: 'codex',
       });
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -327,6 +338,7 @@ describe('config imports', () => {
       expect(opencodeHomeOnly?.source).toEqual({
         kind: 'import',
         path: expectedPath,
+        importKind: 'opencode',
       });
     } finally {
       fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -360,6 +372,7 @@ describe('config imports', () => {
       expect(envServer?.source).toEqual({
         kind: 'import',
         path: tempConfig,
+        importKind: 'opencode',
       });
     } finally {
       process.env.OPENCODE_CONFIG = undefined;

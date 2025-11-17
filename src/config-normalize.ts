@@ -8,7 +8,8 @@ export function normalizeServerEntry(
   name: string,
   raw: RawEntry,
   baseDir: string,
-  source: ServerSource
+  source: ServerSource,
+  sources: readonly ServerSource[]
 ): ServerDefinition {
   const description = raw.description;
   const env = raw.env ? { ...raw.env } : undefined;
@@ -56,6 +57,7 @@ export function normalizeServerEntry(
     clientName,
     oauthRedirectUrl,
     source,
+    sources,
     lifecycle,
     logging,
   };
