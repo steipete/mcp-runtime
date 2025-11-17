@@ -139,6 +139,6 @@ If you are unsure about sth, just google it.
 - **Inspect/Regenerate artifacts**: `npx mcporter inspect-cli dist/thing.js` prints metadata and replay command; `npx mcporter generate-cli --from dist/thing.js` reruns with the latest mcporter.
 
 ## Release Reminders
-- Always read `RELEASE.md` before starting a release; follow every step (including Homebrew + docs updates) before tagging/publishing.
+- Always read `docs/RELEASE.md` before starting a release; follow every step (including Homebrew + docs updates) before tagging/publishing.
 - Global help automatically short-circuits regardless of command inference. Use `mcporter help list` if you need command-specific detail.
 - Global help automatically short-circuits regardless of command inference. Use `mcporter help list` if you need command-specific detail.

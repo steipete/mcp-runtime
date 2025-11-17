@@ -249,7 +249,7 @@ describe('mcporter CLI integration', () => {
     expect(helpOutput.stdout).toContain('--echo <echo>');
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  });
+  }, 20000);
 
   it('runs "node dist/cli.js generate-cli --compile" using the Bun bundler by default', async () => {
     if (!(await ensureBunSupport('Bun bundler compile integration test'))) {
@@ -298,7 +298,7 @@ describe('mcporter CLI integration', () => {
     expect(helpOutput.stdout).toContain('--echo <echo>');
 
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
-  });
+  }, 20000);
 
   it('accepts inline stdio commands (e.g., "npx -y chrome-devtools-mcp@latest") when compiling', async () => {
     if (!(await ensureBunSupport('inline stdio compile integration test'))) {

@@ -4,6 +4,13 @@
 
 _No changes yet._
 
+## [0.6.0] - 2025-11-16
+
+### Configuration
+- Default config resolution now layers the system config (`~/.mcporter/mcporter.json[c]`) before the project config (`config/mcporter.json`), so globally installed MCP servers remain available inside repos while allowing per-project overrides.
+- `--config` and `MCPORTER_CONFIG` continue to select a single file without merging for explicit workflows.
+- `mcporter config add --scope home|project` lets you choose the write target explicitly (project remains the default; `--persist <path>` still wins when provided).
+
 ## [0.5.11] - 2025-11-16
 
 ### Code generation & metadata
@@ -210,7 +217,7 @@ _No changes yet._
 - Added `docs/tool-calling.md`, `docs/call-syntax.md`, and `docs/call-heuristic.md` to capture every invocation style (flags, function expressions, inferred verbs) plus the typo-correction rules.
 - Expanded the ad-hoc/OAuth story across `README.md`, `docs/adhoc.md`, `docs/local.md`, `docs/known-issues.md`, and `docs/supabase-auth-issue.md`, detailing when servers auto-promote to OAuth, how retries behave, and how to persist generated definitions safely.
 - Updated the README, CLI reference, and generator docs to cover the new `--all-parameters` flag, list formatter, metadata embedding, the `mcporter emit-ts` workflow, and refreshed branding so the CLI and docs consistently introduce the project as **MCPorter**.
-- Tightened `RELEASE.md` with a zero-warning policy so `pnpm check`, `pnpm test`, `npm pack --dry-run`, and friends must run clean before publishing.
+- Tightened `docs/RELEASE.md` with a zero-warning policy so `pnpm check`, `pnpm test`, `npm pack --dry-run`, and friends must run clean before publishing.
 
 ## [0.2.0] - 2025-11-06
 

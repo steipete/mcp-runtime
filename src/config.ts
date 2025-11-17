@@ -33,43 +33,46 @@ export type {
 
 export async function loadServerDefinitions(options: LoadConfigOptions = {}): Promise<ServerDefinition[]> {
   const rootDir = options.rootDir ?? process.cwd();
-  const { config, path: configPath } = await loadRawConfig(options);
+  const layers = await loadConfigLayers(options, rootDir);
 
   const merged = new Map<string, { raw: RawEntry; baseDir: string; source: ServerSource }>();
 
-  const configuredImports = config.imports;
-  const imports = configuredImports
-    ? configuredImports.length === 0
-      ? configuredImports
-      : [...configuredImports, ...DEFAULT_IMPORTS.filter((kind) => !configuredImports.includes(kind))]
-    : DEFAULT_IMPORTS;
-  for (const importKind of imports) {
-    const candidates = pathsForImport(importKind, rootDir);
-    for (const candidate of candidates) {
-      const resolved = expandHome(candidate);
-      const entries = await readExternalEntries(resolved, { projectRoot: rootDir, importKind: importKind });
-      if (!entries) {
-        continue;
-      }
-      for (const [name, rawEntry] of entries) {
-        if (merged.has(name)) {
+  for (const layer of layers) {
+    const configuredImports = layer.config.imports;
+    const imports = configuredImports
+      ? configuredImports.length === 0
+        ? configuredImports
+        : [...configuredImports, ...DEFAULT_IMPORTS.filter((kind) => !configuredImports.includes(kind))]
+      : DEFAULT_IMPORTS;
+
+    for (const importKind of imports) {
+      const candidates = pathsForImport(importKind, rootDir);
+      for (const candidate of candidates) {
+        const resolved = expandHome(candidate);
+        const entries = await readExternalEntries(resolved, { projectRoot: rootDir, importKind: importKind });
+        if (!entries) {
           continue;
         }
-        merged.set(name, {
-          raw: rawEntry,
-          baseDir: path.dirname(resolved),
-          source: { kind: 'import', path: resolved },
-        });
+        for (const [name, rawEntry] of entries) {
+          if (merged.has(name)) {
+            continue;
+          }
+          merged.set(name, {
+            raw: rawEntry,
+            baseDir: path.dirname(resolved),
+            source: { kind: 'import', path: resolved },
+          });
+        }
       }
     }
-  }
 
-  for (const [name, entryRaw] of Object.entries(config.mcpServers)) {
-    merged.set(name, {
-      raw: RawEntrySchema.parse(entryRaw),
-      baseDir: rootDir,
-      source: { kind: 'local', path: configPath },
-    });
+    for (const [name, entryRaw] of Object.entries(layer.config.mcpServers)) {
+      merged.set(name, {
+        raw: RawEntrySchema.parse(entryRaw),
+        baseDir: path.dirname(layer.path),
+        source: { kind: 'local', path: layer.path },
+      });
+    }
   }
 
   const servers: ServerDefinition[] = [];
@@ -87,6 +90,41 @@ export async function loadRawConfig(
   const resolved = resolveConfigPath(options.configPath, rootDir);
   const config = await readConfigFile(resolved.path, resolved.explicit);
   return { config, ...resolved };
+}
+
+type ConfigLayer = {
+  config: RawConfig;
+  path: string;
+  explicit: boolean;
+};
+
+async function loadConfigLayers(options: LoadConfigOptions, rootDir: string): Promise<ConfigLayer[]> {
+  const explicitPath = options.configPath ?? process.env.MCPORTER_CONFIG;
+  if (explicitPath) {
+    const resolvedPath = path.resolve(expandHome(explicitPath.trim()));
+    const config = await readConfigFile(resolvedPath, true);
+    return [{ config, path: resolvedPath, explicit: true }];
+  }
+
+  const layers: ConfigLayer[] = [];
+
+  const homeCandidates = homeConfigCandidates();
+  const existingHome = homeCandidates.find((candidate) => pathExists(candidate));
+  if (existingHome) {
+    layers.push({ config: await readConfigFile(existingHome, false), path: existingHome, explicit: false });
+  }
+
+  const projectPath = path.resolve(rootDir, 'config', 'mcporter.json');
+  if (pathExists(projectPath)) {
+    layers.push({ config: await readConfigFile(projectPath, false), path: projectPath, explicit: false });
+  }
+
+  if (layers.length === 0) {
+    // Preserve prior behavior: a missing default config returns an empty list and assumes the project path.
+    layers.push({ config: { mcpServers: {} }, path: projectPath, explicit: false });
+  }
+
+  return layers;
 }
 
 export async function writeRawConfig(targetPath: string, config: RawConfig): Promise<void> {

@@ -23,6 +23,8 @@ interface ConfigCliOptions {
   readonly invokeAuth: (args: string[]) => Promise<void>;
 }
 
+type ConfigScope = 'home' | 'project';
+
 interface ListFlags {
   format: 'text' | 'json';
   source?: 'local' | 'import';
@@ -43,6 +45,7 @@ interface AddFlags {
   auth?: string;
   copyFrom?: string;
   persistPath?: string;
+  scope?: ConfigScope;
   dryRun?: boolean;
 }
 
@@ -108,6 +111,10 @@ const CONFIG_HELP_ENTRIES: Record<ConfigSubcommand, ConfigHelpEntry> = {
       { flag: '--auth <strategy>', description: 'Force the auth type (e.g., oauth).' },
       { flag: '--copy-from <import:name>', description: 'Start with an imported definition by name.' },
       { flag: '--persist <config-path>', description: 'Write to an alternate mcporter.json path.' },
+      {
+        flag: '--scope <home|project>',
+        description: 'Choose whether to write to the home or project config (default: project).',
+      },
       { flag: '--dry-run', description: 'Print the would-be entry without writing to disk.' },
       { flag: '--', description: 'Forward every subsequent token as a stdio arg.' },
     ],
@@ -375,6 +382,22 @@ function extractListFlags(args: string[]): ListFlags {
   return flags;
 }
 
+function resolveWriteTarget(flags: AddFlags, loadOptions: LoadConfigOptions, rootDir: string): string {
+  if (flags.persistPath) {
+    return path.resolve(expandHome(flags.persistPath));
+  }
+  if (flags.scope === 'home') {
+    return path.join(os.homedir(), '.mcporter', 'mcporter.json');
+  }
+  if (flags.scope === 'project') {
+    return path.resolve(rootDir, 'config', 'mcporter.json');
+  }
+  if (loadOptions.configPath) {
+    return path.resolve(expandHome(loadOptions.configPath));
+  }
+  return path.resolve(rootDir, 'config', 'mcporter.json');
+}
+
 function filterMatches(filter: string, server: ServerDefinition): boolean {
   if (filter.startsWith('source:')) {
     const origin = server.source?.kind ?? 'local';
@@ -487,9 +510,8 @@ async function handleAddCommand(options: ConfigCliOptions, args: string[]): Prom
   }
   const flags = extractAddFlags(args);
 
-  const effectiveLoadOptions = flags.persistPath
-    ? { ...options.loadOptions, configPath: path.resolve(expandHome(flags.persistPath)) }
-    : options.loadOptions;
+  const targetPath = resolveWriteTarget(flags, options.loadOptions, options.loadOptions.rootDir ?? process.cwd());
+  const effectiveLoadOptions: LoadConfigOptions = { ...options.loadOptions, configPath: targetPath };
 
   const { config, path: configPath } = await loadOrCreateConfig(effectiveLoadOptions);
   const nextConfig = cloneConfig(config);
@@ -594,6 +616,15 @@ function extractAddFlags(args: string[]): AddFlags {
         flags.persistPath = requireValue(args, index, token);
         args.splice(index, 2);
         continue;
+      case '--scope': {
+        const scopeValue = requireValue(args, index, token);
+        if (scopeValue !== 'home' && scopeValue !== 'project') {
+          throw new CliUsageError('--scope must be either "home" or "project".');
+        }
+        flags.scope = scopeValue;
+        args.splice(index, 2);
+        continue;
+      }
       case '--dry-run':
         flags.dryRun = true;
         args.splice(index, 1);
@@ -1050,3 +1081,7 @@ function findServerNameWithFuzzyMatch(name: string, candidates: string[]): strin
   }
   return null;
 }
+
+export const __configCommandInternals = {
+  resolveWriteTarget,
+};
