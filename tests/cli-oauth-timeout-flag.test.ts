@@ -58,7 +58,7 @@ describe('mcporter --oauth-timeout flag', () => {
       command: { kind: 'http' as const, url: new URL('https://example.com/mcp') },
     };
     const runtimeModule = await import('../src/runtime.js');
-    const TimeoutError = runtimeModule.__test.OAuthTimeoutError;
+    const { OAuthTimeoutError: TimeoutError } = await import('../src/runtime/oauth.js');
     const failingListTools = vi.fn(async () => {
       throw new TimeoutError('fake', 500);
     });

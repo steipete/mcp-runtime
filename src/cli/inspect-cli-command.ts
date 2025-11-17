@@ -1,6 +1,6 @@
 import { readCliMetadata } from '../cli-metadata.js';
 import { expectValue } from './flag-utils.js';
-import { buildGenerateCliCommand, shellQuote } from './generate-cli-runner.js';
+import { buildGenerateCliCommand, shellQuote } from './generate/template-data.js';
 import { formatSourceSuffix } from './list-format.js';
 import { consumeOutputFormat } from './output-format.js';
 import { formatPathForDisplay } from './path-utils.js';
