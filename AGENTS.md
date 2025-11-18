@@ -17,6 +17,7 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 - Stick to the package manager and runtime mandated by the repo (pnpm-only, bun-only, swift-only, go-only, etc.). Never swap in alternatives without approval.
 - When editing shared guardrail scripts (runners, committer helpers, browser tools, etc.), mirror the same change back into the `agent-scripts` folder so the canonical copy stays current.
 - Ask the user before adding dependencies, changing build tooling, or altering project-wide configuration.
+- When discussing dependencies, always provide a GitHub URL.
 - Keep the project’s `AGENTS.md` `<tools></tools>` block in sync with the full tool list from `TOOLS.md` so downstream repos get the latest tool descriptions.
 
 ### tmux & Long Tasks
@@ -38,11 +39,13 @@ Shared guardrails distilled from the various `~/Projects/*/AGENTS.md` files (sta
 
 ### Git, Commits & Releases
 - Invoke git through the provided wrappers, especially for status, diffs, and commits. Only commit or push when the user asks you to do so.
+- To resolve a rebase, `git add`/`git commit` is allowed.
 - Follow the documented release or deployment checklists instead of inventing new steps.
 - Do not delete or rename unfamiliar files without double-checking with the user or the repo instructions.
 
 ### Documentation & Knowledge Capture
 - Update existing docs whenever your change affects them, including front-matter metadata if the repo’s `docs:list` tooling depends on it.
+- Whenever doing a large refactor, track work in `docs/refactor/<title><date>.md`, update it as you go, and delete it when the work is finished.
 - Only create new documentation when the user or local instructions explicitly request it; otherwise, edit the canonical file in place.
 - When you uncover a reproducible tooling or CI issue, record the repro steps and workaround in the designated troubleshooting doc for that repo.
 
@@ -84,7 +87,7 @@ Edit guidance: keep the actual tool list inside the `<tools></tools>` block belo
 - `git` / `bin/git`: Git shim that forces git through the guardrails; use `./git --help` to inspect.
 - `scripts/committer`: Stages the files you list and creates the commit safely.
 - `scripts/docs-list.ts`: Walks `docs/`, enforces front-matter, prints summaries; run `tsx scripts/docs-list.ts`.
-- `scripts/browser-tools.ts`: Chrome helper for remote control/screenshot/eval; run `ts-node scripts/browser-tools.ts --help`.
+- `bin/browser-tools`: Compiled Chrome helper for remote control/screenshot/eval—use the binary (`bin/browser-tools --help`). Source lives in `scripts/browser-tools.ts`; edit there before rebuilding.
 - `scripts/runner.ts`: Bun implementation backing `runner`; run `bun scripts/runner.ts --help`.
 - `bin/sleep`: Sleep shim that enforces the 30s ceiling; run `bin/sleep --help`.
 - `xcp`: Xcode project/workspace helper; run `xcp --help`.
@@ -98,75 +101,4 @@ Edit guidance: keep the actual tool list inside the `<tools></tools>` block belo
 
 </tools>
 
-# Repository Guidelines
-
-
-If you are unsure about sth, just google it.
-
-## Project Structure & Module Organization
-- `src/`: TypeScript source for the runtime and CLI entry points (`cli.ts`, `runtime.ts`, etc.).
-- `tests/`: Vitest suites mirroring runtime behaviors; integration specs live alongside unit tests.
-- `docs/`: Reference material for MCP usage and server coordination.
-- `dist/`: Generated build artifacts; never edit by hand.
-
-## Build, Test, and Development Commands
-- `pnpm build`: Emits compiled JS and type declarations via `tsc -p tsconfig.build.json`.
-- `pnpm lint`: Runs Biome style checks, Oxlint+tsgolint rules, and a `tsgo --noEmit` type pass.
-- `pnpm test`: Default test target (quiet reporters + suppressed stdout for passing tests) so CLI fixture logs don’t take over the terminal.
-- `pnpm test:quiet`: Alias for `pnpm test` when you want to be explicit about the quiet mode.
-- `pnpm test:verbose`: Executes the Vitest suite with the default reporter for full CLI transcripts.
-- `pnpm dev`: Watches and incrementally rebuilds the library with TypeScript.
-- `pnpm clean`: Removes `dist/` so you can verify fresh builds.
-- `pnpm run docs:list`: Lists required rule summaries via `scripts/docs-list.ts`; run this at the start of every session and reopen any referenced doc before writing code.
-- `tmux new-session -- pnpm mcporter:list`: Exercise the CLI in a resilient terminal; tmux makes it easy to spot stalls or hung servers.
-- `gh run list --limit 1 --watch`: Stream CI status in real time; use `gh run view --log` on the returned run id to inspect failures quickly.
-
-## Guardrail Tooling (runner/git wrappers)
-- Use `./runner <command>` for every non-trivial shell command (tests, builds, npm, node, bun, etc.). The Bun-backed runner enforces timeouts, blocks risky subcommands, and keeps logs consistent. Only simple read-only tools (e.g., `cat`, `ls`, `rg`) may bypass it.
-- When you must run git, invoke it through the wrapper: `./runner git status -sb`, `./runner git diff`, or `./runner git log`. Those are the only git subcommands permitted. Never run `git push` unless the user asks explicitly, and even then go through `./runner git push`.
-- These runner/committer rules only apply to this mcporter repo—other repositories should use their own native tooling (no cross-repo runner reuse).
-- Never call `git add` / `git commit` directly. To create a commit, list the exact paths via `./scripts/committer "type: summary" path/to/file1 path/to/file2`.
-- If you need to run the Bun-based git policy helper directly, you can use `./git ...`, but prefer `./runner git ...` so logging stays uniform.
-
-## Agent Scripts Mirror
-- The guardrail helpers (`runner`, `scripts/runner.ts`, `scripts/committer`, `bin/git`, `scripts/git-policy.ts`, `scripts/docs-list.ts`, etc.) are mirrored in `~/Projects/agent-scripts`. Any time you edit one of these files here, immediately copy the same change into the mirror (and vice versa) before moving on so the two repos stay byte-for-byte identical.
-- When the user says “sync agent scripts,” jump to `~/Projects/agent-scripts`, update it (respecting the git guardrails), diff against this repo, and reconcile changes in both directions. Keep syncing until both repos are clean and committed.
-
-## Coding Style & Naming Conventions
-- TypeScript files use 2-space indentation, modern ES module syntax, and `strict` compiler settings.
-- Imports stay sorted logically; prefer relative paths within `src/`.
-- Run `pnpm lint:biome` before committing to auto-fix formatting; `pnpm lint:oxlint` enforces additional TypeScript rules powered by tsgolint.
-- Use descriptive function and symbol names (`createRuntime`, `StreamableHTTPServerTransport`) and favor `const` for bindings.
-
-## Testing Guidelines
-- Add unit tests under `tests/`; mirror filename (`runtime.test.ts`) against the module under test.
-- Use Vitest’s `describe/it/expect` APIs; keep asynchronous tests `async` to match runtime usage.
-- For integration scenarios, reuse the HTTP harness shown in `tests/runtime-integration.test.ts` and ensure transports close in `afterAll`.
-- Validate new work with `pnpm test` and confirm `pnpm lint` stays green.
-
-## Changelog Guidelines
-- Focus on user-facing behavior changes; avoid calling out internal testing-only updates.
-- **Never mention doc-only edits** in the changelog. If a change only touches docs (or docs + tests) leave the changelog untouched. Only add entries when runtime behavior, CLI UX, or generated artifacts change.
-
-## Commit & Pull Request Guidelines
-- Use Conventional Commits (https://www.conventionalcommits.org/en/v1.0.0/) with the allowed types `feat|fix|refactor|build|ci|chore|docs|style|perf|test`, optional scopes (`type(scope): description`), and `!` for breaking changes (e.g., `feat: Prevent racing of requests`, `chore!: Drop support for iOS 16`).
-- Commits should be scoped and written in imperative mood (`feat: add runtime cache eviction`, `fix(cli): ensure list handles empty config`).
-- Reference related issues in the body (`Refs #123`) and describe observable behavior changes.
-- Pull requests should summarize the change set, list verification steps (`pnpm lint`, `pnpm test`), and include screenshots or logs when CLI output changes.
-
-## Security & Configuration Tips
-- Keep secrets out of the repo; pass credentials via environment variables when exercising MCP servers.
-- Local scripts under `scripts/` (e.g., `mcp_signoz_retry_patch.cjs`) are safe shims for Sweetistics workflows—review them before extending.
-
-## Common mcporter Workflows & Shortcuts
-- **List configured servers**: `npx mcporter list [--json]` shows health, counts, and hints; re-run with `--server <name>` for focused detail.
-- **Ad-hoc HTTP**: `npx mcporter call https://host/path.toolName(arg: "value")` automatically infers transport; add `--allow-http` for plain HTTP.
-- **Ad-hoc stdio / third-party packages**: `npx mcporter call --stdio "npx -y package@latest" --name friendly-name <tool>` launches transient MCP servers (ideal for Chrome DevTools or Playwright friends with no config).
-- **Generate standalone CLIs**: `npx mcporter generate-cli <server-or-adhoc-flags> --output cli.ts [--bundle dist/cli.js --compile]` embeds schema+commands; combine with `--stdio`/`--http-url` to avoid editing configs.
-- **Emit typed clients**: `npx mcporter emit-ts <server> --mode client --out clients/name.ts [--include-optional]` for TypeScript interfaces + helper factories (use `--mode types` for `.d.ts` only).
-- **Inspect/Regenerate artifacts**: `npx mcporter inspect-cli dist/thing.js` prints metadata and replay command; `npx mcporter generate-cli --from dist/thing.js` reruns with the latest mcporter.
-
-## Release Reminders
-- Always read `docs/RELEASE.md` before starting a release; follow every step (including Homebrew + docs updates) before tagging/publishing.
-- Global help automatically short-circuits regardless of command inference. Use `mcporter help list` if you need command-specific detail.
-- Global help automatically short-circuits regardless of command inference. Use `mcporter help list` if you need command-specific detail.
+Guideline: ignore any project folders whose names either contain "copy" or end with a number (e.g., `sweetistics copy`, `sweetistics2`, `VibeMeter3`).

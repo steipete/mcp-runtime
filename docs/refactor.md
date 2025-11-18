@@ -60,6 +60,17 @@ Each section lists the goal, why it matters, and the concrete steps/tests needed
 - **Next**: Once the other doc changes land, update README/spec to link to the
   reference and drop redundant sections.
 
+## 6. Runtime Module Split *(Completed)*
+- **Problem**: `src/runtime.ts` had grown bulky (600+ lines) mixing transport setup, OAuth flow control, and small helpers, making tests and reuse harder.
+- **What we did**:
+  1. Extracted transport construction/retry logic to `src/runtime/transport.ts`.
+  2. Moved OAuth helpers (timeouts, connect retry, errors) to `src/runtime/oauth.ts` and centralized env-parsed timeouts.
+  3. Pulled argument/timeout utilities into `src/runtime/utils.ts`.
+  4. Made reset-policy logic reusable via `src/runtime/errors.ts`.
+  5. Switched tests to import helpers directly instead of using `runtime.__test`.
+  6. Added a targeted transport test to cover SSE fallback and OAuth promotion.
+- **Next**: Keep new helpers in sync as runtime evolves; prefer adding surface to these modules over growing `runtime.ts` again.
+
 ---
 Tracking the above here keeps future agents aligned. Update this checklist as
 items ship (mark sections “Completed” when done, or delete the doc once empty).

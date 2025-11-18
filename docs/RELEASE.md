@@ -11,9 +11,10 @@
 5. pnpm build
 6. pnpm build:bun
 7. tar -C dist-bun -czf dist-bun/mcporter-macos-arm64-v<version>.tar.gz mcporter
-8. shasum -a 256 dist-bun/mcporter-macos-arm64-v<version>.tar.gz
-9. npm pack --dry-run to inspect the npm tarball.
-10. Verify git status is clean.
+8. shasum -a 256 dist-bun/mcporter-macos-arm64-v<version>.tar.gz | tee dist-bun/mcporter-macos-arm64-v<version>.tar.gz.sha256
+9. npm pack --pack-destination /tmp && mv /tmp/mcporter-<version>.tgz .  # keep the real tarball
+10. shasum mcporter-<version>.tgz > mcporter-<version>.tgz.sha1 && shasum -a 256 mcporter-<version>.tgz > mcporter-<version>.tgz.sha256
+11. Verify git status is clean.
 11. git commit && git push.
 12. pnpm publish --tag latest *(the runner already has npm credentials configured, so you can run this directly in the release shell; bump `timeout_ms` if needed because prepublish re-runs check/test/build and can take several minutes.)*
 13. `npm view mcporter version` (and `npm view mcporter time`) to ensure the registry reflects the new release before proceeding. If the new version isn’t visible yet, wait a minute and retry—npm’s replication can lag briefly.
@@ -34,8 +35,14 @@
     - <bugfix or UX callout>
 
     SHA256 (mcporter-macos-arm64-v<version>.tar.gz): `<sha from step 8>`
+    SHA256 (mcporter-<version>.tgz): `<sha from npm pack>`
     ```
-    Then create the GitHub release, upload mcporter-macos-arm64-v<version>.tar.gz (with the SHA from step 8), and record the release URL. Double-check the uploaded checksum matches step 8.
+    Then **create the GitHub release for tag v<version>** and upload all assets:
+    - `mcporter-macos-arm64-v<version>.tar.gz`
+    - `mcporter-macos-arm64-v<version>.tar.gz.sha256` (from step 8; add a `.sha256` file)
+    - `mcporter-<version>.tgz` (from `npm pack`)
+    - `mcporter-<version>.tgz.sha1` and `mcporter-<version>.tgz.sha256`
+    Double-check the uploaded checksums match your local files.
 16. Tag the release (git tag v<version> && git push --tags).
 
 After the release is live, always update the Homebrew tap and re-verify both installers. That flow should be:

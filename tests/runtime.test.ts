@@ -3,7 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { loadServerDefinitions } from '../src/config.js';
 import { resolveEnvPlaceholders, resolveEnvValue, withEnvOverrides } from '../src/env.js';
-import { __test as runtimeTestHelpers } from '../src/runtime.js';
+import { resolveCommandArgument } from '../src/runtime/utils.js';
 
 const FIXTURE_PATH = path.resolve(__dirname, 'fixtures', 'mcporter.json');
 
@@ -82,13 +82,13 @@ describe('command argument interpolation', () => {
   it('resolves placeholder tokens', () => {
     process.env.CHROME_DEVTOOLS_URL = 'http://127.0.0.1:5555';
     const placeholder = String.raw`\${CHROME_DEVTOOLS_URL}`;
-    const result = runtimeTestHelpers.resolveCommandArgument(`--browserUrl ${placeholder}`);
+    const result = resolveCommandArgument(`--browserUrl ${placeholder}`);
     expect(result).toBe('--browserUrl http://127.0.0.1:5555');
   });
 
   it('passes through tokens without placeholders', () => {
     const value = '--browserUrl';
-    const result = runtimeTestHelpers.resolveCommandArgument(value);
+    const result = resolveCommandArgument(value);
     expect(result).toBe(value);
   });
 });

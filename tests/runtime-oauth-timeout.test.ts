@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { OAuthSession } from '../src/oauth.js';
-import { __test } from '../src/runtime.js';
+import { OAuthTimeoutError, waitForAuthorizationCodeWithTimeout } from '../src/runtime/oauth.js';
 
 describe('waitForAuthorizationCodeWithTimeout', () => {
   afterEach(() => {
@@ -22,8 +22,8 @@ describe('waitForAuthorizationCodeWithTimeout', () => {
       error: vi.fn(),
     };
 
-    const promise = __test.waitForAuthorizationCodeWithTimeout(session, logger, 'fake', 1_000);
-    const expectation = expect(promise).rejects.toBeInstanceOf(__test.OAuthTimeoutError);
+    const promise = waitForAuthorizationCodeWithTimeout(session, logger, 'fake', 1_000);
+    const expectation = expect(promise).rejects.toBeInstanceOf(OAuthTimeoutError);
     await vi.advanceTimersByTimeAsync(1_000);
     await expectation;
     expect(logger.warn).toHaveBeenCalledWith(expect.stringContaining('timed out after 1s'));
@@ -50,7 +50,7 @@ describe('waitForAuthorizationCodeWithTimeout', () => {
       error: vi.fn(),
     };
 
-    const promise = __test.waitForAuthorizationCodeWithTimeout(session, logger, 'fake', 1_000);
+    const promise = waitForAuthorizationCodeWithTimeout(session, logger, 'fake', 1_000);
     const expectation = expect(promise).resolves.toBe('abc123');
     resolveCode?.('abc123');
     await vi.advanceTimersByTimeAsync(0);

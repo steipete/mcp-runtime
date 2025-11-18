@@ -10,26 +10,30 @@ describe('mcporter list --verbose end-to-end', () => {
   let tempDir: string;
   let originalCwd: string;
   let restoreHomedir: (() => void) | undefined;
+  let originalEnv: NodeJS.ProcessEnv;
 
   beforeEach(async () => {
     originalCwd = process.cwd();
+    originalEnv = { ...process.env };
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mcporter-cli-verbose-'));
-    process.chdir(tempDir);
     const spy = vi.spyOn(os, 'homedir');
     spy.mockReturnValue(tempDir);
     restoreHomedir = () => spy.mockRestore();
     process.env.MCPORTER_NO_FORCE_EXIT = '1';
+    process.env.HOME = tempDir;
+    process.env.USERPROFILE = tempDir;
   });
 
   afterEach(async () => {
     restoreHomedir?.();
     delete process.env.MCPORTER_NO_FORCE_EXIT;
+    process.env = { ...originalEnv };
     process.chdir(originalCwd);
     await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
     process.exitCode = undefined;
   });
 
-  it('prints verbose source markers in text output and includes sources in JSON', async () => {
+  it('prints verbose source markers in text output and includes sources in JSON', { concurrent: false }, async () => {
     const projectConfigPath = path.join(tempDir, 'config', 'mcporter.json');
     await fs.mkdir(path.dirname(projectConfigPath), { recursive: true });
     await fs.writeFile(
@@ -55,6 +59,7 @@ describe('mcporter list --verbose end-to-end', () => {
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
 
     // Text mode verbose should render primary + shadowed paths.
+    process.env.MCPORTER_CONFIG = projectConfigPath;
     await runCli(['list', '--verbose']);
     const textOutput = logSpy.mock.calls.map((call) => call.join(' ')).join('\n');
     expect(textOutput).toContain('alpha');
