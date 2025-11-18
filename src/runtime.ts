@@ -202,10 +202,27 @@ class McpRuntime implements Runtime {
         return rawResult;
       }
 
-      // Create CallResult, apply projection, and return the result with overridden json()
+      // Create CallResult, apply projection, and modify the raw envelope to contain projected data
       const base = createCallResult(rawResult);
       const projected = base.pick(mapping.pick);
-      return base.withJsonOverride(projected).raw;
+
+      // Replace the content in the raw MCP envelope with the projected data
+      if (projected !== null && rawResult && typeof rawResult === 'object' && 'content' in rawResult) {
+        const modified = { ...rawResult } as any;
+        if (Array.isArray(modified.content) && modified.content.length > 0) {
+          const firstContent = modified.content[0];
+          if (firstContent && typeof firstContent === 'object' && 'type' in firstContent) {
+            if (firstContent.type === 'json' && 'json' in firstContent) {
+              // Update the json field in the content block
+              modified.content = [{ ...firstContent, json: projected }];
+              return modified;
+            }
+          }
+        }
+      }
+
+      // Fallback: return raw result if structure doesn't match expected MCP envelope
+      return rawResult;
     } catch (error) {
       // Runtime timeouts and transport crashes should tear down the cached connection so
       // the daemon (or direct runtime) can relaunch the MCP server on the next attempt.
