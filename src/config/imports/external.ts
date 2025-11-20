@@ -30,7 +30,7 @@ export async function readExternalEntries(
     }
 
     const parsed = parseJsonBuffer(buffer);
-    return extractFromMcpJson(parsed, options);
+    return extractFromMcpJson(parsed, options, filePath);
   } catch (error) {
     if (shouldIgnoreParseError(error)) {
       return new Map<string, RawEntry>();
@@ -39,14 +39,14 @@ export async function readExternalEntries(
   }
 }
 
-function extractFromMcpJson(raw: unknown, options: ReadExternalEntryOptions): Map<string, RawEntry> {
+function extractFromMcpJson(raw: unknown, options: ReadExternalEntryOptions, filePath?: string): Map<string, RawEntry> {
   const map = new Map<string, RawEntry>();
   if (!isRecord(raw)) {
     return map;
   }
 
   const { importKind, projectRoot } = options;
-  const descriptor = resolveContainerDescriptor(importKind);
+  const descriptor = resolveContainerDescriptor(importKind, filePath);
 
   const containers: Record<string, unknown>[] = [];
   if (descriptor.allowMcpServers && isRecord(raw.mcpServers)) {
@@ -213,7 +213,10 @@ function addEntriesFromContainer(container: Record<string, unknown>, target: Map
   }
 }
 
-function resolveContainerDescriptor(importKind: ImportKind | undefined): {
+function resolveContainerDescriptor(
+  importKind: ImportKind | undefined,
+  filePath?: string
+): {
   allowMcpServers: boolean;
   allowServers: boolean;
   allowMcp: boolean;
@@ -227,6 +230,19 @@ function resolveContainerDescriptor(importKind: ImportKind | undefined): {
       allowRootFallback: false,
     };
   }
+
+  // For claude-code, only allow root fallback for .claude.json (legacy format)
+  // Settings files like .claude/settings.json require proper mcpServers/servers/mcp containers
+  if (importKind === 'claude-code' && filePath) {
+    const allowRootFallback = filePath.endsWith('.claude.json');
+    return {
+      allowMcpServers: true,
+      allowServers: true,
+      allowMcp: true,
+      allowRootFallback,
+    };
+  }
+
   return {
     allowMcpServers: true,
     allowServers: true,

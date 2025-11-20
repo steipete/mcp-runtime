@@ -204,4 +204,60 @@ describe('config import helpers', () => {
     const cursorUserSuffix = path.join('Cursor', 'User', 'mcp.json');
     expect(paths.some((candidate) => candidate.endsWith(cursorUserSuffix))).toBe(true);
   });
+
+  it('prevents root fallback for .claude/settings.json with non-MCP fields', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const jsonPath = path.join(TEMP_DIR, 'settings.json');
+    await fs.writeFile(
+      jsonPath,
+      JSON.stringify({
+        statusLine: { type: 'command', command: 'bash script.sh' },
+        tipsHistory: { shown: ['tip1', 'tip2'] },
+        cachedStatsigGates: { someFlag: true },
+      }),
+      'utf8'
+    );
+    const entries = await readExternalEntries(jsonPath, { importKind: 'claude-code' });
+    expect(entries?.size ?? 0).toBe(0);
+  });
+
+  it('allows root fallback for .claude.json legacy format', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const jsonPath = path.join(TEMP_DIR, '.claude.json');
+    await fs.writeFile(
+      jsonPath,
+      JSON.stringify({
+        'my-server': {
+          command: 'node',
+          args: ['server.js'],
+        },
+      }),
+      'utf8'
+    );
+    const entries = await readExternalEntries(jsonPath, { importKind: 'claude-code' });
+    expect(entries?.size).toBe(1);
+    expect(entries?.has('my-server')).toBe(true);
+  });
+
+  it('uses mcpServers container in settings.json when present', async () => {
+    await fs.mkdir(TEMP_DIR, { recursive: true });
+    const jsonPath = path.join(TEMP_DIR, 'settings.json');
+    await fs.writeFile(
+      jsonPath,
+      JSON.stringify({
+        statusLine: { type: 'command', command: 'bash script.sh' },
+        mcpServers: {
+          'real-server': {
+            command: 'node',
+            args: ['server.js'],
+          },
+        },
+      }),
+      'utf8'
+    );
+    const entries = await readExternalEntries(jsonPath, { importKind: 'claude-code' });
+    expect(entries?.size).toBe(1);
+    expect(entries?.has('real-server')).toBe(true);
+    expect(entries?.has('statusLine')).toBe(false);
+  });
 });
