@@ -4,8 +4,8 @@
 // "Unknown option --filter" error.
 
 import { spawnSync } from 'node:child_process';
-import path from 'node:path';
 import { createRequire } from 'node:module';
+import path from 'node:path';
 
 const args = process.argv.slice(2);
 const translated = [];
