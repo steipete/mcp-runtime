@@ -65,11 +65,7 @@ export async function createClientContext(
   const client = new Client(clientInfo);
   let activeDefinition = definition;
 
-  if (
-    options.allowCachedAuth &&
-    activeDefinition.auth === 'oauth' &&
-    activeDefinition.command.kind === 'http'
-  ) {
+  if (options.allowCachedAuth && activeDefinition.auth === 'oauth' && activeDefinition.command.kind === 'http') {
     try {
       const cached = await loadCachedAccessToken(activeDefinition);
       if (cached) {
