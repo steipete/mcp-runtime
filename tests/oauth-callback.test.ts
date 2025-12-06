@@ -84,4 +84,21 @@ describe('oauth callback handling', () => {
     expect(status).toBe(200);
     await expect(wait).resolves.toBe('xyz');
   });
+
+  it('accepts callbacks that omit state (compat servers)', async () => {
+    const session = await createOAuthSession(makeDefinition(), logger);
+    cleanup = () => session.close();
+    const provider = session.provider as StatefulProvider;
+    const redirect = new URL(String(provider.redirectUrl));
+    redirect.hostname = '127.0.0.1';
+
+    await provider.state();
+    const wait = session.waitForAuthorizationCode();
+
+    const okUrl = new URL(redirect);
+    okUrl.searchParams.set('code', 'nostate');
+    const status = await requestStatus(okUrl);
+    expect(status).toBe(200);
+    await expect(wait).resolves.toBe('nostate');
+  });
 });

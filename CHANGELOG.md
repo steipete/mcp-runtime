@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+- Nothing yet.
+
 ## [0.7.0] - 2025-12-06
 ### CLI
 - Centralized OAuth credentials in a shared vault (`~/.mcporter/credentials.json`) while still honoring per-server `tokenCacheDir` when present; legacy per-server caches are migrated automatically.

@@ -102,3 +102,8 @@ Edit guidance: keep the actual tool list inside this `<tools></tools>` block so 
 - `XcodeBuildMCP`: MCP wrapper around Xcode tooling; run `npx mcporter XcodeBuildMCP`.
 - `gh`: GitHub CLI for PRs, CI logs, releases, repo queries; run `gh help`.
 </tools>
+
+# Repo Notes
+
+- Live Deepwiki tests are opt-in; run with `MCP_LIVE_TESTS=1 ./runner pnpm exec vitest run tests/live/deepwiki-live.test.ts` when you need real endpoint coverage.
+- The skipped OAuth-promotion case in `tests/runtime-transport.test.ts` can be validated by temporarily unskipping it (Vitest does not support `--runInBand`). Remove any temporary helper files after running.

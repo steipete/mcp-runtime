@@ -29,7 +29,7 @@
     ./chrome-devtools-mcp --help | head -n 5
     ```
     Only continue once the CLI compiles and the help banner prints.
-15. Draft the GitHub release notes using this template (copy/paste and edit):
+15. Draft the GitHub release notes using this template (copy/paste and edit). **Title the release `mcporter v<version>` (project name + version) to keep GitHub’s releases list consistent.**
     ```markdown
     ## Highlights
     - <top feature>

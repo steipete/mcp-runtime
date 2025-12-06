@@ -149,7 +149,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         const error = parsed.searchParams.get('error');
         const receivedState = parsed.searchParams.get('state');
         const expectedState = await this.persistence.readState();
-        if (expectedState && receivedState !== expectedState) {
+        if (expectedState && receivedState && receivedState !== expectedState) {
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
           res.end('<html><body><h1>Authorization failed</h1><p>Invalid OAuth state</p></body></html>');
