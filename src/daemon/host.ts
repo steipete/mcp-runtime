@@ -3,6 +3,7 @@ import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import type { ServerDefinition } from '../config.js';
+import { listConfigLayerPaths } from '../config.js';
 import { isKeepAliveServer, keepAliveIdleTimeout } from '../lifecycle.js';
 import { createRuntime, type Runtime } from '../runtime.js';
 import type {
@@ -32,6 +33,7 @@ interface ServerActivity {
 }
 
 export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
+  const configLayers = await collectConfigLayers(options);
   const runtime = await createRuntime({
     configPath: options.configExplicit ? options.configPath : undefined,
     rootDir: options.rootDir,
@@ -63,6 +65,7 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
 
   await prepareSocket(options.socketPath);
   await fs.mkdir(path.dirname(options.metadataPath), { recursive: true });
+  const configMtimeMs = await statConfigMtime(options.configPath);
 
   const activity = new Map<string, ServerActivity>();
   for (const definition of keepAliveDefinitions) {
@@ -106,9 +109,11 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
         activity,
         {
           configPath: options.configPath,
+          configLayers,
           socketPath: options.socketPath,
           startedAt,
           logPath: options.logPath ?? null,
+          configMtimeMs,
         },
         logContext,
         shutdown,
@@ -145,8 +150,10 @@ export async function runDaemonHost(options: DaemonHostOptions): Promise<void> {
         pid: process.pid,
         socketPath: options.socketPath,
         configPath: options.configPath,
+        configLayers,
         startedAt: Date.now(),
         logPath: options.logPath ?? null,
+        configMtimeMs,
       },
       null,
       2
@@ -203,6 +210,29 @@ async function cleanupArtifacts(options: DaemonHostOptions): Promise<void> {
   }
 }
 
+async function statConfigMtime(configPath: string): Promise<number | null> {
+  try {
+    const stats = await fs.stat(configPath);
+    return stats.mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+async function collectConfigLayers(
+  options: DaemonHostOptions
+): Promise<Array<{ path: string; mtimeMs: number | null }>> {
+  const layerPaths = await listConfigLayerPaths(
+    options.configExplicit ? { configPath: options.configPath } : {},
+    options.rootDir ?? process.cwd()
+  );
+  const entries: Array<{ path: string; mtimeMs: number | null }> = [];
+  for (const layerPath of layerPaths) {
+    entries.push({ path: layerPath, mtimeMs: await statConfigMtime(layerPath) });
+  }
+  return entries;
+}
+
 async function handleSocketRequest(
   rawPayload: string,
   socket: net.Socket,
@@ -211,6 +241,8 @@ async function handleSocketRequest(
   activity: Map<string, ServerActivity>,
   metadata: {
     configPath: string;
+    configLayers: Array<{ path: string; mtimeMs: number | null }>;
+    configMtimeMs: number | null;
     socketPath: string;
     startedAt: number;
     logPath: string | null;
@@ -244,6 +276,8 @@ async function processRequest(
   activity: Map<string, ServerActivity>,
   metadata: {
     configPath: string;
+    configLayers: Array<{ path: string; mtimeMs: number | null }>;
+    configMtimeMs: number | null;
     socketPath: string;
     startedAt: number;
     logPath: string | null;
@@ -376,6 +410,8 @@ async function processRequest(
           pid: process.pid,
           startedAt: metadata.startedAt,
           configPath: metadata.configPath,
+          configLayers: metadata.configLayers,
+          configMtimeMs: metadata.configMtimeMs,
           socketPath: metadata.socketPath,
           logPath: metadata.logPath ?? undefined,
           servers: Array.from(managedServers.values()).map((def) => {
@@ -551,6 +587,8 @@ export async function __testProcessRequest(
   activity: Map<string, ServerActivity>,
   metadata: {
     configPath: string;
+    configLayers: Array<{ path: string; mtimeMs: number | null }>;
+    configMtimeMs: number | null;
     socketPath: string;
     startedAt: number;
     logPath: string | null;

@@ -8,6 +8,8 @@ describe('daemon host request handling', () => {
   it('reuses pre-parsed requests without reparsing payloads', async () => {
     const metadata = {
       configPath: '/tmp/config.json',
+      configLayers: [],
+      configMtimeMs: Date.now(),
       socketPath: '/tmp/socket',
       startedAt: Date.now(),
       logPath: null,

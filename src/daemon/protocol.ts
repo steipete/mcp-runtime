@@ -42,6 +42,11 @@ export interface StatusResult {
   readonly pid: number;
   readonly startedAt: number;
   readonly configPath: string;
+  readonly configMtimeMs?: number | null;
+  readonly configLayers?: Array<{
+    readonly path: string;
+    readonly mtimeMs: number | null;
+  }>;
   readonly socketPath: string;
   readonly logPath?: string;
   readonly servers: Array<{

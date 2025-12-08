@@ -2,7 +2,12 @@
 
 ## [Unreleased]
 
-- Nothing yet.
+### Daemon
+- Track config file mtime in daemon metadata and restart automatically when the config changes, so newly added keep-alive servers (e.g., Playwright) are picked up without manual daemon restarts. Adds regression tests for stale-daemon detection.
+
+## [0.7.1] - 2025-12-08
+### Daemon
+- Track config file mtimes for every loaded layer (home + project or explicit) in daemon metadata and auto-restart when any layer changes, so newly added keep-alive servers are picked up without manual restarts. Includes regression tests for stale-daemon detection.
 
 ## [0.7.0] - 2025-12-06
 ### CLI
