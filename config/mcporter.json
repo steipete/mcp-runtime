@@ -60,15 +60,7 @@
       }
     },
     "playwright": {
-      "description": "Playwright MCP server for accessibility-driven automation.",
-      "command": "npx",
-      "args": [
-        "-y",
-        "@playwright/mcp@latest"
-      ],
-      "env": {
-        "npm_config_loglevel": "error"
-      }
+      "command": "npx @playwright/mcp --browser chrome"
     },
     "vercel": {
       "description": "Vercel MCP (requires OAuth).",
@@ -108,6 +100,7 @@
       "baseUrl": "https://www.shadcn.io/api/mcp"
     },
     "iterm": {
+      "description": "iTerm2 terminal bridge via local iterm-mcp",
       "command": "pnpm",
       "args": [
         "--dir",
@@ -116,7 +109,6 @@
         "node",
         "build/index.js"
       ],
-      "description": "iTerm2 terminal bridge via local iterm-mcp",
       "env": {
         "npm_config_loglevel": "error"
       }

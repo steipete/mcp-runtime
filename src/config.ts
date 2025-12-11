@@ -110,6 +110,30 @@ export async function loadRawConfig(
   return { config, ...resolved };
 }
 
+export async function listConfigLayerPaths(
+  options: LoadConfigOptions = {},
+  rootDir: string = process.cwd()
+): Promise<string[]> {
+  const explicitPath = options.configPath ?? process.env.MCPORTER_CONFIG;
+  if (explicitPath) {
+    return [path.resolve(expandHome(explicitPath.trim()))];
+  }
+
+  const paths: string[] = [];
+  const homeCandidates = homeConfigCandidates();
+  const existingHome = homeCandidates.find((candidate) => pathExists(candidate));
+  if (existingHome) {
+    paths.push(existingHome);
+  }
+
+  const projectPath = path.resolve(rootDir, 'config', 'mcporter.json');
+  if (pathExists(projectPath)) {
+    paths.push(projectPath);
+  }
+
+  return paths;
+}
+
 type ConfigLayer = {
   config: RawConfig;
   path: string;

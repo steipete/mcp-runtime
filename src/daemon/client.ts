@@ -1,6 +1,8 @@
 import crypto, { randomUUID } from 'node:crypto';
+import fs from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
+import { listConfigLayerPaths } from '../config.js';
 import { launchDaemonDetached } from './launch.js';
 import { getDaemonMetadataPath, getDaemonSocketPath } from './paths.js';
 import type {
@@ -26,6 +28,16 @@ export interface DaemonPaths {
   readonly key: string;
   readonly socketPath: string;
   readonly metadataPath: string;
+}
+
+interface DaemonMetadata {
+  readonly pid: number;
+  readonly socketPath: string;
+  readonly configPath: string;
+  readonly configMtimeMs?: number | null;
+  readonly configLayers?: Array<{ path: string; mtimeMs: number | null }>;
+  readonly startedAt: number;
+  readonly logPath?: string | null;
 }
 
 export function resolveDaemonPaths(configPath: string): DaemonPaths {
@@ -100,6 +112,11 @@ export class DaemonClient {
   }
 
   private async ensureDaemon(): Promise<void> {
+    if (await this.isConfigStale()) {
+      await this.stop().catch(() => {});
+      await this.restartDaemon();
+      return;
+    }
     const available = await this.isResponsive();
     if (available) {
       return;
@@ -155,6 +172,28 @@ export class DaemonClient {
       }
       throw error;
     }
+  }
+
+  private async isConfigStale(): Promise<boolean> {
+    const metadata = await readDaemonMetadata(this.metadataPath);
+    if (!metadata) {
+      return false;
+    }
+    const currentLayers = normalizeLayers(await collectConfigLayers(this.options));
+    const metadataLayers = normalizeLayers(
+      metadata.configLayers ?? [{ path: metadata.configPath, mtimeMs: metadata.configMtimeMs ?? null }]
+    );
+    if (currentLayers.length !== metadataLayers.length) {
+      return true;
+    }
+    for (let i = 0; i < currentLayers.length; i += 1) {
+      const current = currentLayers[i];
+      const previous = metadataLayers[i];
+      if (!current || !previous || current.path !== previous.path || current.mtimeMs !== previous.mtimeMs) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private async sendRequest<T>(method: DaemonRequestMethod, params: unknown, timeoutOverrideMs?: number): Promise<T> {
@@ -259,8 +298,53 @@ function resolveDaemonTimeout(override?: number): number {
   return parsed;
 }
 
+async function statConfigMtime(configPath: string): Promise<number | null> {
+  try {
+    const stats = await fs.stat(configPath);
+    return stats.mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+async function collectConfigLayers(
+  options: DaemonClientOptions
+): Promise<Array<{ path: string; mtimeMs: number | null }>> {
+  const layerPaths = await listConfigLayerPaths(
+    options.configExplicit ? { configPath: options.configPath } : {},
+    options.rootDir ?? process.cwd()
+  );
+  const layers: Array<{ path: string; mtimeMs: number | null }> = [];
+  for (const layerPath of layerPaths) {
+    layers.push({ path: layerPath, mtimeMs: await statConfigMtime(layerPath) });
+  }
+  // If no layers were found (e.g., missing defaults), fall back to the primary config path so
+  // explicit single-file runs still record freshness.
+  if (layers.length === 0) {
+    layers.push({ path: path.resolve(options.configPath), mtimeMs: await statConfigMtime(options.configPath) });
+  }
+  return layers;
+}
+
+async function readDaemonMetadata(metadataPath: string): Promise<DaemonMetadata | null> {
+  try {
+    const raw = await fs.readFile(metadataPath, 'utf8');
+    return JSON.parse(raw) as DaemonMetadata;
+  } catch {
+    return null;
+  }
+}
+
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function normalizeLayers(
+  layers: Array<{ path: string; mtimeMs: number | null }>
+): Array<{ path: string; mtimeMs: number | null }> {
+  return layers
+    .map((entry) => ({ path: path.resolve(entry.path), mtimeMs: entry.mtimeMs ?? null }))
+    .sort((a, b) => a.path.localeCompare(b.path));
 }
