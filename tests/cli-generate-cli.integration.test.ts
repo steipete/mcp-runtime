@@ -526,13 +526,18 @@ describe('mcporter CLI integration', () => {
     expect(helpOutput.stdout).not.toContain('admin-reset');
 
     const pingOutput = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
-      execFile(binaryPath, ['ping', '--echo', 'works', '--output', 'json'], { env: process.env }, (error, stdout, stderr) => {
-        if (error) {
-          reject(error);
-          return;
+      execFile(
+        binaryPath,
+        ['ping', '--echo', 'works', '--output', 'json'],
+        { env: process.env },
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(error);
+            return;
+          }
+          resolve({ stdout, stderr });
         }
-        resolve({ stdout, stderr });
-      });
+      );
     });
     const parsed = JSON.parse(pingOutput.stdout.trim()) as { ok: boolean; echo?: string };
     expect(parsed.ok).toBe(true);
