@@ -3,14 +3,14 @@
 ## [Unreleased]
 
 ### CLI
-- Coerce generated CLI array arguments based on JSON Schema item types (including integer arrays).
+- Coerce generated CLI array arguments based on JSON Schema item types (including integer arrays). (Thanks @rawwerks, PR #27)
 
 ### Tests
 - Added regression coverage for typed array parsing in generated CLIs.
 
 ## [0.7.2] - 2025-12-29
 ### CLI
-- Fixed generated CLIs to read Commander.js option values via camelCased properties so snake_case tool schemas map correctly.
+- Fixed generated CLIs to read Commander.js option values via camelCased properties so snake_case tool schemas map correctly. (Thanks @rawwerks, PR #28)
 
 ### Tests
 - Added regression coverage for snake_case, camelCase, and numeric option names in generated CLIs.
