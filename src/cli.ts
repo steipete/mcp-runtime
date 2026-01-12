@@ -12,6 +12,7 @@ import { extractEphemeralServerFlags } from './cli/ephemeral-flags.js';
 import { prepareEphemeralServerTarget } from './cli/ephemeral-target.js';
 import { CliUsageError } from './cli/errors.js';
 import { handleGenerateCli } from './cli/generate-cli-runner.js';
+import { handleGenerateSkill } from './cli/generate-skill-runner.js';
 import { looksLikeHttpUrl } from './cli/http-utils.js';
 import { handleInspectCli } from './cli/inspect-cli-command.js';
 import { buildConnectionIssueEnvelope } from './cli/json-output.js';
@@ -32,6 +33,7 @@ import { createRuntime, MCPORTER_VERSION } from './runtime.js';
 export { parseCallArguments } from './cli/call-arguments.js';
 export { handleCall } from './cli/call-command.js';
 export { handleGenerateCli } from './cli/generate-cli-runner.js';
+export { handleGenerateSkill } from './cli/generate-skill-runner.js';
 export { handleInspectCli } from './cli/inspect-cli-command.js';
 export { extractListFlags, handleList } from './cli/list-command.js';
 export { resolveCallTimeout } from './cli/timeouts.js';
@@ -72,6 +74,10 @@ export async function runCli(argv: string[]): Promise<void> {
   // Early-exit command handlers that don't require runtime inference.
   if (command === 'generate-cli') {
     await handleGenerateCli(args, globalFlags);
+    return;
+  }
+  if (command === 'generate-skill') {
+    await handleGenerateSkill(args, globalFlags);
     return;
   }
   if (command === 'inspect-cli') {
@@ -292,6 +298,11 @@ function buildCommandSections(colorize: boolean): string[] {
           usage: 'mcporter generate-cli --server <name> | --command <ref> [options]',
         },
         {
+          name: 'generate-skill',
+          summary: 'Emit a skill folder for a single MCP server',
+          usage: 'mcporter generate-skill --server <name> | --command <ref> [options]',
+        },
+        {
           name: 'inspect-cli',
           summary: 'Show metadata and regen instructions for a generated CLI',
           usage: 'mcporter inspect-cli <path> [--json]',
@@ -372,6 +383,7 @@ function formatQuickStart(colorize: boolean): string {
     ['mcporter list linear --schema', 'view Linear tool docs'],
     ['mcporter call linear.list_issues limit:5', 'invoke a tool with key=value arguments'],
     ['mcporter generate-cli --command https://host/mcp --compile ./my-cli', 'build a standalone CLI/binary'],
+    ['mcporter generate-skill --command https://host/mcp', 'build a skill folder'],
   ];
   const formatted = entries.map(([cmd, note]) => {
     const comment = colorize ? dimText(`# ${note}`) : `# ${note}`;

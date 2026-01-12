@@ -9,7 +9,7 @@ read_when:
 mcporter is the Sweetistics CLI + runtime for the Model Context Protocol (MCP). It wraps the upstream TypeScript SDK with:
 
 - **Runtime orchestration** – `createRuntime` loads servers from config JSON, editor imports, or ad-hoc flags and handles OAuth retries, transport promotion, and cleanup.
-- **CLI surfaces** – `mcporter list`, `mcporter call`, `mcporter generate-cli`, `mcporter emit-ts`, and `mcporter inspect-cli` expose the runtime features to humans and scripts.
+- **CLI surfaces** – `mcporter list`, `mcporter call`, `mcporter generate-cli`, `mcporter generate-skill`, `mcporter emit-ts`, and `mcporter inspect-cli` expose the runtime features to humans and scripts.
 - **Tooling helpers** – `createServerProxy` maps MCP tools to camelCase methods for Node/Bun scripts and returns `CallResult` helpers (`.text()`, `.markdown()`, `.json()`).
 
 ## Primary Commands
@@ -20,6 +20,8 @@ mcporter is the Sweetistics CLI + runtime for the Model Context Protocol (MCP). 
   Invokes a tool via either flag syntax or the function-call expression form; add `--output json` to capture structured responses.
 - `npx mcporter generate-cli --server name [--bundle|--compile]`  
   Emits a standalone CLI for a single MCP server. Bundling defaults to Rolldown unless the runtime resolves to Bun; compiled binaries require Bun.
+- `npx mcporter generate-skill --server name`  
+  Emits a skill folder (with tool docs and a ready-to-use MCPorter config) for a single MCP server.
 - `npx mcporter emit-ts <server> --mode types|client`  
   Produces `.d.ts` files or typed client factories that mirror the CLI schema output.
 - `npx mcporter inspect-cli dist/server.js`  
