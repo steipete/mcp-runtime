@@ -18,6 +18,7 @@ MCPorter helps you lean into the "code execution" workflows highlighted in Anthr
 
 - **Zero-config discovery.** `createRuntime()` merges your home config (`~/.mcporter/mcporter.json[c]`) first, then `config/mcporter.json`, plus Cursor/Claude/Codex/Windsurf/OpenCode/VS Code imports, expands `${ENV}` placeholders, and pools connections so you can reuse transports across multiple calls.
 - **One-command CLI generation.** `mcporter generate-cli` turns any MCP server definition into a ready-to-run CLI, with optional bundling/compilation and metadata for easy regeneration.
+- **Codex skill generation.** `mcporter generate-skill` emits a Codex skill folder with tool docs and a ready-to-use MCPorter config for the same server.
 - **Typed tool clients.** `mcporter emit-ts` emits `.d.ts` interfaces or ready-to-run client wrappers so agents/tests can call MCP servers with strong TypeScript types without hand-writing plumbing.
 - **Friendly composable API.** `createServerProxy()` exposes tools as ergonomic camelCase methods, automatically applies JSON-schema defaults, validates required arguments, and hands back a `CallResult` with `.text()`, `.markdown()`, `.json()`, and `.content()` helpers.
 - **OAuth and stdio ergonomics.** Built-in OAuth caching, log tailing, and stdio wrappers let you work with HTTP, SSE, and stdio transports from the same interface.
@@ -318,6 +319,23 @@ Every artifact embeds regeneration metadata (generator version, resolved server 
 npx mcporter inspect-cli dist/context7.js     # human-readable summary
 npx mcporter generate-cli --from dist/context7.js  # replay with latest mcporter
 ```
+
+## Generate a Codex Skill
+
+Create a skill folder that Codex can load directly:
+
+```bash
+npx mcporter generate-skill \
+  --command https://mcp.context7.com/mcp
+```
+
+The generator writes:
+
+- `SKILL.md` with frontmatter + workflow guidance.
+- `assets/mcporter.json` containing a ready-to-use MCPorter config for this server.
+- `references/tools.md` with tool signatures, flags, and examples.
+
+Use `--output <path>` to choose the skill directory, and the same server-selection flags as `generate-cli` (inline JSON, URLs, stdio commands, or config names).
 
 ## Generate Typed Clients
 

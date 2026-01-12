@@ -53,6 +53,21 @@ A quick reference for the primary `mcporter` subcommands. Each command inherits
     `linear` definition; `npx mcporter generate-cli https://example.com/mcp`
     treats the URL as an ad-hoc server definition.
 
+## `mcporter generate-skill`
+- Produces a skill folder for a single MCP server, including:
+  - `SKILL.md` with frontmatter, high-level capabilities summary, and workflow guidance.
+  - `assets/mcporter.json` containing a ready-to-use MCPorter config.
+  - `references/tools.md` with tool signatures and examples.
+- Accepts the same server-resolution flags as `generate-cli`:
+  - `--server <name>` (or inline JSON) – choose the server definition.
+  - `--command <url|command>` – ad-hoc HTTP or stdio target (same parsing as `generate-cli`).
+  - `--name` / `--description` – override inferred server metadata when using `--command`.
+  - `--include-tools <a,b,c>` / `--exclude-tools <a,b,c>` – filter tool coverage.
+  - `--output <path>` – directory to write the skill (defaults to `<name>-skill`).
+  - `--from <path>` – reuse metadata from an existing skill folder (or the `.mcporter-skill.json` file inside it).
+  - `--dry-run` – print the resolved `mcporter generate-skill ...` command (requires `--from`).
+  - Bundler/minify/compile flags are accepted for parity with `generate-cli` but currently do not change the output.
+
 ## `mcporter emit-ts <server>`
 - Emits TypeScript definitions (and optionally a ready-to-use client) describing
   a server’s tools. This reuses the same formatter as `mcporter list` so doc

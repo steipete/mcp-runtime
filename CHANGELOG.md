@@ -4,6 +4,7 @@
 
 ### CLI
 - Preserve default imports when `mcporter config add` writes a config file, instead of forcing `"imports": []`.
+- Added `mcporter generate-skill` to emit Codex skill folders with embedded tool docs and MCPorter config.
 
 ## [0.7.3] - 2025-12-29
 

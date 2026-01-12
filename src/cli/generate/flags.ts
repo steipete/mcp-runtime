@@ -142,7 +142,7 @@ export function parseGenerateFlags(args: string[]): GenerateFlags {
       continue;
     }
     if (token.startsWith('--')) {
-      throw new Error(`Unknown flag '${token}' for generate-cli.`);
+      throw new Error(`Unknown flag '${token}' for generate-cli/generate-skill.`);
     }
     index += 1;
   }
