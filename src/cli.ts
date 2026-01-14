@@ -484,6 +484,11 @@ export async function handleAuth(runtime: Awaited<ReturnType<typeof createRuntim
     return;
   }
 
+  if (definition.command.kind === 'http' && definition.auth !== 'oauth') {
+    logInfo(`Forcing OAuth for '${target}' (auth command).`);
+    runtime.registerDefinition({ ...definition, auth: 'oauth' }, { overwrite: true });
+  }
+
   // Kick off the interactive OAuth flow without blocking list output. We retry once if the
   // server gets auto-promoted to OAuth mid-flight.
   for (let attempt = 0; attempt < 2; attempt += 1) {

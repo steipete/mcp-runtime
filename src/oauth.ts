@@ -82,6 +82,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     this.logger = logger;
     this.persistence = persistence;
     this.metadata = clientMetadata;
+    this.logger.debug?.(`OAuth redirect URL set to ${this.redirectUrlValue.toString()}.`);
+    this.logger.debug?.(
+      `OAuth client metadata: scope=${this.metadata.scope ?? 'none'}, redirect=${this.redirectUrlValue.toString()}`
+    );
   }
 
   static async create(
@@ -173,6 +177,9 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       application_type: 'native',
     };
 
+    logger.debug?.(
+      `OAuth callback listener active at ${redirectUrl.toString()} (host=${listenHost}, port=${port}, path=${redirectUrl.pathname}).`
+    );
     const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, clientMetadata);
     provider.attachServer(server);
     return {
@@ -189,10 +196,16 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     server.on('request', async (req, res) => {
       try {
         const url = req.url ?? '';
+        this.logger.debug?.(`OAuth callback request: ${req.method ?? 'GET'} ${url}`);
         const parsed = new URL(url, this.redirectUrlValue);
         const expectedPath = this.redirectUrlValue.pathname || '/';
         const fallbackPath = expectedPath === '/' ? '/callback' : null;
         if (parsed.pathname !== expectedPath && parsed.pathname !== fallbackPath) {
+          this.logger.debug?.(
+            `OAuth callback path mismatch. Expected ${expectedPath}${
+              fallbackPath ? ` or ${fallbackPath}` : ''
+            }, received ${parsed.pathname}.`
+          );
           res.statusCode = 404;
           res.end('Not found');
           return;
@@ -202,6 +215,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         const receivedState = parsed.searchParams.get('state');
         const expectedState = await this.persistence.readState();
         if (expectedState && receivedState && receivedState !== expectedState) {
+          this.logger.warn(`OAuth state mismatch for ${this.definition.name}.`);
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
           res.end('<html><body><h1>Authorization failed</h1><p>Invalid OAuth state</p></body></html>');
@@ -211,12 +225,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
         }
         if (code) {
           this.logger.info(`Received OAuth authorization code for ${this.definition.name}`);
+          this.logger.debug?.(`OAuth authorization code length: ${code.length}.`);
           res.statusCode = 200;
           res.setHeader('Content-Type', 'text/html');
           res.end('<html><body><h1>Authorization successful</h1><p>You can return to the CLI.</p></body></html>');
           this.authorizationDeferred?.resolve(code);
           this.authorizationDeferred = null;
         } else if (error) {
+          this.logger.warn(`OAuth callback returned error for ${this.definition.name}: ${error}`);
           res.statusCode = 400;
           res.setHeader('Content-Type', 'text/html');
           res.end(`<html><body><h1>Authorization failed</h1><p>${error}</p></body></html>`);
@@ -254,11 +270,16 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   }
 
   async clientInformation(): Promise<OAuthClientInformationMixed | undefined> {
-    return this.persistence.readClientInfo();
+    const info = await this.persistence.readClientInfo();
+    this.logger.debug?.(
+      `Loaded OAuth client information for ${this.definition.name}: ${info ? 'present' : 'missing'}.`
+    );
+    return info;
   }
 
   async saveClientInformation(clientInformation: OAuthClientInformationMixed): Promise<void> {
     await this.persistence.saveClientInfo(clientInformation);
+    this.logger.info(`Saved OAuth client information for ${this.definition.name} (${this.persistence.describe()})`);
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {
@@ -350,4 +371,5 @@ export interface OAuthLogger {
   info(message: string): void;
   warn(message: string): void;
   error(message: string, error?: unknown): void;
+  debug?(message: string): void;
 }

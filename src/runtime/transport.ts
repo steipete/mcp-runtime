@@ -9,16 +9,92 @@ import type { Logger } from '../logging.js';
 import { createOAuthSession, type OAuthSession } from '../oauth.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
+import { analyzeConnectionError } from '../error-classifier.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
 import { connectWithAuth, OAuthTimeoutError } from './oauth.js';
 import { resolveCommandArgument, resolveCommandArguments } from './utils.js';
 
 const STDIO_TRACE_ENABLED = process.env.MCPORTER_STDIO_TRACE === '1';
+const REGISTRATION_TOKEN_ENV = 'MCPORTER_OAUTH_REGISTRATION_TOKEN';
+const REGISTRATION_HEADER_ENV = 'MCPORTER_OAUTH_REGISTRATION_HEADER';
 
 function attachStdioTraceLogging(_transport: StdioClientTransport, _label?: string): void {
   // STDIO instrumentation is handled via sdk-patches side effects. This helper remains
   // so runtime callers can opt-in without sprinkling conditional checks everywhere.
+}
+
+function resolveFetchUrl(input: RequestInfo | URL): URL | undefined {
+  if (typeof input === 'string') {
+    try {
+      return new URL(input);
+    } catch {
+      return undefined;
+    }
+  }
+  if (input instanceof URL) {
+    return input;
+  }
+  if (typeof Request !== 'undefined' && input instanceof Request) {
+    try {
+      return new URL(input.url);
+    } catch {
+      return undefined;
+    }
+  }
+  return undefined;
+}
+
+function isRegistrationRequest(url: URL | undefined, method: string): boolean {
+  if (!url) {
+    return false;
+  }
+  if (method.toUpperCase() !== 'POST') {
+    return false;
+  }
+  return url.pathname.endsWith('/register');
+}
+
+function createOAuthFetch(logger: Logger): typeof fetch {
+  const rawHeaderName = process.env[REGISTRATION_HEADER_ENV]?.trim();
+  const rawToken = process.env[REGISTRATION_TOKEN_ENV]?.trim();
+  const headerName = rawHeaderName && rawHeaderName.length > 0 ? rawHeaderName : 'Authorization';
+  const headerValue =
+    rawToken && headerName.toLowerCase() === 'authorization' ? `Bearer ${rawToken}` : rawToken ?? undefined;
+
+  return async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = resolveFetchUrl(input);
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
+    const isRegistration = isRegistrationRequest(url, method);
+    let nextInit = init;
+
+    if (isRegistration) {
+      if (headerValue) {
+        const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined));
+        headers.set(headerName, headerValue);
+        nextInit = { ...init, headers };
+        logger.debug?.(
+          `OAuth registration request: ${url?.toString() ?? 'unknown'} (added header ${headerName}).`
+        );
+      } else {
+        logger.debug?.(
+          `OAuth registration request: ${url?.toString() ?? 'unknown'} (no registration token provided).`
+        );
+      }
+      if (typeof init?.body === 'string') {
+        const bodyPreview = init.body.length > 500 ? `${init.body.slice(0, 500)}...` : init.body;
+        logger.debug?.(`OAuth registration payload: ${bodyPreview}`);
+      }
+    }
+
+    const response = await fetch(input as RequestInfo, nextInit);
+    if (isRegistration) {
+      logger.debug?.(
+        `OAuth registration response: ${response.status} ${response.statusText || ''}`.trim()
+      );
+    }
+    return response;
+  };
 }
 
 export interface ClientContext {
@@ -43,6 +119,11 @@ export async function createClientContext(
 ): Promise<ClientContext> {
   const client = new Client(clientInfo);
   let activeDefinition = definition;
+  logger.debug?.(
+    `createClientContext: name=${definition.name}, auth=${definition.auth ?? 'none'}, kind=${definition.command.kind}, maxOAuthAttempts=${
+      options.maxOAuthAttempts ?? 'default'
+    }, allowCachedAuth=${options.allowCachedAuth ? 'true' : 'false'}.`
+  );
 
   if (options.allowCachedAuth && activeDefinition.auth === 'oauth' && activeDefinition.command.kind === 'http') {
     try {
@@ -112,16 +193,25 @@ export async function createClientContext(
       let oauthSession: OAuthSession | undefined;
       const shouldEstablishOAuth = activeDefinition.auth === 'oauth' && options.maxOAuthAttempts !== 0;
       if (shouldEstablishOAuth) {
+        logger.debug?.(`Creating OAuth session for '${activeDefinition.name}'.`);
         oauthSession = await createOAuthSession(activeDefinition, logger);
+      } else {
+        if (activeDefinition.auth !== 'oauth') {
+          logger.debug?.(`OAuth session skipped for '${activeDefinition.name}': auth=${activeDefinition.auth ?? 'none'}.`);
+        } else {
+          logger.debug?.(`OAuth session skipped for '${activeDefinition.name}': maxOAuthAttempts=0.`);
+        }
       }
 
       const resolvedHeaders = materializeHeaders(command.headers, activeDefinition.name);
       const requestInit: RequestInit | undefined = resolvedHeaders
         ? { headers: resolvedHeaders as HeadersInit }
         : undefined;
+      const oauthFetch = oauthSession ? createOAuthFetch(logger) : undefined;
       const baseOptions = {
         requestInit,
         authProvider: oauthSession?.provider,
+        fetch: oauthFetch,
       };
 
       const attemptConnect = async () => {
@@ -147,6 +237,12 @@ export async function createClientContext(
       try {
         return await attemptConnect();
       } catch (primaryError) {
+        const primaryIssue = analyzeConnectionError(primaryError);
+        logger.debug?.(
+          `Streamable HTTP connect failed for '${activeDefinition.name}': kind=${primaryIssue.kind}, status=${
+            primaryIssue.statusCode ?? 'n/a'
+          }, message=${primaryIssue.rawMessage}`
+        );
         if (isUnauthorizedError(primaryError)) {
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
@@ -177,6 +273,12 @@ export async function createClientContext(
           });
           return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
         } catch (sseError) {
+          const sseIssue = analyzeConnectionError(sseError);
+          logger.debug?.(
+            `SSE connect failed for '${activeDefinition.name}': kind=${sseIssue.kind}, status=${
+              sseIssue.statusCode ?? 'n/a'
+            }, message=${sseIssue.rawMessage}`
+          );
           await closeTransportAndWait(logger, sseTransport).catch(() => {});
           await oauthSession?.close().catch(() => {});
           if (sseError instanceof OAuthTimeoutError) {

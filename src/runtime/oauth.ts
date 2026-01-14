@@ -30,6 +30,9 @@ export async function connectWithAuth(
   options: { serverName?: string; maxAttempts?: number; oauthTimeoutMs?: number } = {}
 ): Promise<void> {
   const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS } = options;
+  logger.debug?.(
+    `connectWithAuth: server=${serverName ?? 'unknown'}, maxAttempts=${maxAttempts}, session=${session ? 'yes' : 'no'}.`
+  );
   let attempt = 0;
   while (true) {
     try {
@@ -37,14 +40,18 @@ export async function connectWithAuth(
       return;
     } catch (error) {
       if (!isUnauthorizedError(error) || !session) {
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.debug?.(`connectWithAuth: non-auth error (or no session): ${detail}`);
         throw error;
       }
       attempt += 1;
+      logger.debug?.(`connectWithAuth: auth required (attempt ${attempt}/${maxAttempts}).`);
       if (attempt > maxAttempts) {
         throw error;
       }
       if (session.didStartAuthorization && !session.didStartAuthorization()) {
         const detail = error instanceof Error ? error.message : String(error);
+        logger.warn(`connectWithAuth: OAuth session never started for '${serverName ?? 'unknown'}'.`);
         throw new Error(
           `OAuth flow failed before a browser authorization could begin. ` +
             `This may mean the server rejected dynamic client registration. ` +
@@ -53,6 +60,9 @@ export async function connectWithAuth(
       }
       logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
       try {
+        logger.debug?.(
+          `connectWithAuth: waiting for OAuth callback (timeout ${oauthTimeoutMs ?? DEFAULT_OAUTH_CODE_TIMEOUT_MS}ms).`
+        );
         const code = await waitForAuthorizationCodeWithTimeout(
           session,
           logger,
@@ -85,6 +95,7 @@ export function waitForAuthorizationCodeWithTimeout(
     return session.waitForAuthorizationCode();
   }
   const displayName = serverName ?? 'unknown';
+  logger.debug?.(`waitForAuthorizationCodeWithTimeout: waiting for '${displayName}'.`);
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => {
       const error = new OAuthTimeoutError(displayName, timeoutMs);

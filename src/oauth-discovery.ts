@@ -49,6 +49,9 @@ export async function discoverOAuthMetadata(
     }
   }
   if (!authorizationServerUrl) {
+    if (resourceMetadata) {
+      logger?.warn?.('OAuth protected resource metadata did not include a usable authorization server; falling back.');
+    }
     authorizationServerUrl = new URL('/', resourceUrl);
   }
 
