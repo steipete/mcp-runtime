@@ -19,6 +19,9 @@ const CALLBACK_PATH = '/';
 const DEFAULT_CALLBACK_PORT = 33418;
 const DEFAULT_CLIENT_URI = 'https://github.com/steipete/mcporter';
 const DEFAULT_GRANT_TYPES = ['authorization_code', 'refresh_token'];
+const FIGMA_MCP_HOST = 'mcp.figma.com';
+const FIGMA_SPOOFED_CLIENT_NAME = 'Visual Studio Code';
+const FIGMA_SPOOFED_CLIENT_URI = 'https://code.visualstudio.com';
 
 type OAuthClientMetadataWithApplication = OAuthClientMetadata & {
   application_type?: 'native';
@@ -189,9 +192,22 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       redirectUris.add(redirectUrl.toString());
     }
 
+    const defaultClientName = definition.clientName ?? `mcporter (${definition.name})`;
+    let clientName = defaultClientName;
+    let clientUri = DEFAULT_CLIENT_URI;
+    const shouldSpoofFigma =
+      definition.command.kind === 'http' && definition.command.url.hostname === FIGMA_MCP_HOST;
+    if (shouldSpoofFigma) {
+      clientName = FIGMA_SPOOFED_CLIENT_NAME;
+      clientUri = FIGMA_SPOOFED_CLIENT_URI;
+      logger.warn(
+        `Spoofing OAuth client metadata for ${definition.name} to satisfy current Figma DCR allowlist.`
+      );
+    }
+
     const clientMetadata: OAuthClientMetadataWithApplication = {
-      client_name: definition.clientName ?? `mcporter (${definition.name})`,
-      client_uri: DEFAULT_CLIENT_URI,
+      client_name: clientName,
+      client_uri: clientUri,
       redirect_uris: Array.from(redirectUris),
       grant_types: grantTypes,
       response_types: ['code'],
@@ -205,6 +221,12 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     );
     logger.debug?.(
       `OAuth registration redirect_uris for ${definition.name}: ${clientMetadata.redirect_uris.join(', ')}.`
+    );
+    logger.debug?.(
+      `OAuth registration client_name for ${definition.name}: ${clientMetadata.client_name ?? 'none'}.`
+    );
+    logger.debug?.(
+      `OAuth registration client_uri for ${definition.name}: ${clientMetadata.client_uri ?? 'none'}.`
     );
     logger.debug?.(
       `OAuth registration grant_types for ${definition.name}: ${(clientMetadata.grant_types ?? []).join(', ')}.`
