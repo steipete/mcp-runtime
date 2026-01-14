@@ -11,9 +11,15 @@ import type {
 import type { ServerDefinition } from './config.js';
 import type { OAuthPersistence } from './oauth-persistence.js';
 import { buildOAuthPersistence } from './oauth-persistence.js';
+import { discoverOAuthMetadata, resolveOAuthScope } from './oauth-discovery.js';
 
 const CALLBACK_HOST = '127.0.0.1';
-const CALLBACK_PATH = '/callback';
+const CALLBACK_PATH = '/';
+const DEFAULT_CALLBACK_PORT = 33418;
+
+type OAuthClientMetadataWithApplication = OAuthClientMetadata & {
+  application_type?: 'native';
+};
 
 interface Deferred<T> {
   promise: Promise<T>;
@@ -61,6 +67,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   private readonly logger: OAuthLogger;
   private readonly persistence: OAuthPersistence;
   private redirectUrlValue: URL;
+  private authorizationStarted = false;
   private authorizationDeferred: Deferred<string> | null = null;
   private server?: http.Server;
 
@@ -68,19 +75,13 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     private readonly definition: ServerDefinition,
     persistence: OAuthPersistence,
     redirectUrl: URL,
-    logger: OAuthLogger
+    logger: OAuthLogger,
+    clientMetadata: OAuthClientMetadata
   ) {
     this.redirectUrlValue = redirectUrl;
     this.logger = logger;
     this.persistence = persistence;
-    this.metadata = {
-      client_name: definition.clientName ?? `mcporter (${definition.name})`,
-      redirect_uris: [this.redirectUrlValue.toString()],
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: 'none',
-      scope: 'mcp:tools',
-    };
+    this.metadata = clientMetadata;
   }
 
   static async create(
@@ -97,20 +98,46 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     const listenHost = overrideRedirect?.hostname ?? CALLBACK_HOST;
     const overridePort = overrideRedirect?.port ?? '';
     const usesDynamicPort = !overrideRedirect || overridePort === '' || overridePort === '0';
+    const shouldPreferStablePort = !overrideRedirect;
     const desiredPort = usesDynamicPort ? undefined : Number.parseInt(overridePort, 10);
     const callbackPath =
       overrideRedirect?.pathname && overrideRedirect.pathname !== '/' ? overrideRedirect.pathname : CALLBACK_PATH;
-    const port = await new Promise<number>((resolve, reject) => {
-      server.listen(desiredPort ?? 0, listenHost, () => {
-        const address = server.address();
-        if (typeof address === 'object' && address && 'port' in address) {
-          resolve(address.port);
-        } else {
-          reject(new Error('Failed to determine callback port'));
-        }
+    const listenServer = (portToUse: number) =>
+      new Promise<number>((resolve, reject) => {
+        const onError = (error: unknown) => reject(error);
+        server.once('error', onError);
+        server.listen(portToUse, listenHost, () => {
+          server.off('error', onError);
+          const address = server.address();
+          if (typeof address === 'object' && address && 'port' in address) {
+            resolve(address.port);
+          } else {
+            reject(new Error('Failed to determine callback port'));
+          }
+        });
       });
-      server.once('error', (error) => reject(error));
-    });
+
+    let port: number;
+    try {
+      if (shouldPreferStablePort) {
+        port = await listenServer(DEFAULT_CALLBACK_PORT);
+        logger.info(`Using OAuth loopback redirect port ${port} for ${definition.name}.`);
+      } else {
+        port = await listenServer(desiredPort ?? 0);
+      }
+    } catch (error) {
+      const isAddressInUse =
+        typeof error === 'object' &&
+        error !== null &&
+        'code' in error &&
+        (error as { code?: string }).code === 'EADDRINUSE';
+      if (shouldPreferStablePort && isAddressInUse) {
+        logger.warn(`Port ${DEFAULT_CALLBACK_PORT} is in use; selecting a random OAuth redirect port instead.`);
+        port = await listenServer(desiredPort ?? 0);
+      } else {
+        throw error;
+      }
+    }
 
     const redirectUrl = overrideRedirect
       ? new URL(overrideRedirect.toString())
@@ -122,7 +149,31 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       redirectUrl.pathname = callbackPath;
     }
 
-    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger);
+    let effectiveScope = 'mcp:tools';
+    if (definition.command.kind === 'http') {
+      const { resourceMetadata, authorizationServerMetadata } = await discoverOAuthMetadata(
+        definition.command.url,
+        logger
+      );
+      effectiveScope = resolveOAuthScope({
+        resourceMetadata,
+        authorizationServerMetadata,
+        fallbackScope: effectiveScope,
+      });
+      logger.info(`Using OAuth scope '${effectiveScope}' for ${definition.name}.`);
+    }
+
+    const clientMetadata: OAuthClientMetadataWithApplication = {
+      client_name: definition.clientName ?? `mcporter (${definition.name})`,
+      redirect_uris: [redirectUrl.toString()],
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+      scope: effectiveScope,
+      application_type: 'native',
+    };
+
+    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, clientMetadata);
     provider.attachServer(server);
     return {
       provider,
@@ -139,8 +190,9 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       try {
         const url = req.url ?? '';
         const parsed = new URL(url, this.redirectUrlValue);
-        const expectedPath = this.redirectUrlValue.pathname || '/callback';
-        if (parsed.pathname !== expectedPath) {
+        const expectedPath = this.redirectUrlValue.pathname || '/';
+        const fallbackPath = expectedPath === '/' ? '/callback' : null;
+        if (parsed.pathname !== expectedPath && parsed.pathname !== fallbackPath) {
           res.statusCode = 404;
           res.end('Not found');
           return;
@@ -220,6 +272,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
   async redirectToAuthorization(authorizationUrl: URL): Promise<void> {
     this.logger.info(`Authorization required for ${this.definition.name}. Opening browser...`);
+    this.logger.info(`OAuth authorization URL: ${authorizationUrl.toString()}`);
+    this.authorizationStarted = true;
     this.authorizationDeferred = createDeferred<string>();
     openExternal(authorizationUrl.toString());
     this.logger.info(`If the browser did not open, visit ${authorizationUrl.toString()} manually.`);
@@ -250,6 +304,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     return this.authorizationDeferred.promise;
   }
 
+  didStartAuthorization(): boolean {
+    return this.authorizationStarted;
+  }
+
   // close stops the temporary callback server created for the OAuth session.
   async close(): Promise<void> {
     if (this.authorizationDeferred) {
@@ -272,6 +330,7 @@ export interface OAuthSession {
     waitForAuthorizationCode: () => Promise<string>;
   };
   waitForAuthorizationCode: () => Promise<string>;
+  didStartAuthorization: () => boolean;
   close: () => Promise<void>;
 }
 
@@ -279,9 +338,11 @@ export interface OAuthSession {
 export async function createOAuthSession(definition: ServerDefinition, logger: OAuthLogger): Promise<OAuthSession> {
   const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger);
   const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
+  const didStartAuthorization = () => provider.didStartAuthorization();
   return {
     provider,
     waitForAuthorizationCode,
+    didStartAuthorization,
     close,
   };
 }

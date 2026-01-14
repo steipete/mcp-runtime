@@ -43,6 +43,14 @@ export async function connectWithAuth(
       if (attempt > maxAttempts) {
         throw error;
       }
+      if (session.didStartAuthorization && !session.didStartAuthorization()) {
+        const detail = error instanceof Error ? error.message : String(error);
+        throw new Error(
+          `OAuth flow failed before a browser authorization could begin. ` +
+            `This may mean the server rejected dynamic client registration. ` +
+            `Original error: ${detail}`
+        );
+      }
       logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
       try {
         const code = await waitForAuthorizationCodeWithTimeout(
