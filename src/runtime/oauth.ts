@@ -19,6 +19,16 @@ export class OAuthTimeoutError extends Error {
   }
 }
 
+export class OAuthReconnectRequired extends Error {
+  public readonly serverName?: string;
+
+  constructor(serverName?: string) {
+    super(`OAuth tokens acquired for '${serverName ?? 'unknown'}'; reconnect required.`);
+    this.name = 'OAuthReconnectRequired';
+    this.serverName = serverName;
+  }
+}
+
 export async function connectWithAuth(
   client: Client,
   transport: Transport & {
@@ -72,6 +82,7 @@ export async function connectWithAuth(
         if (typeof transport.finishAuth === 'function') {
           await transport.finishAuth(code);
           logger.info('Authorization code accepted. Retrying connection...');
+          throw new OAuthReconnectRequired(serverName);
         } else {
           logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
           throw error;
