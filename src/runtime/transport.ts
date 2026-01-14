@@ -92,6 +92,12 @@ function createOAuthFetch(logger: Logger): typeof fetch {
       logger.debug?.(
         `OAuth registration response: ${response.status} ${response.statusText || ''}`.trim()
       );
+      if (response.status === 403) {
+        logger.warn?.(
+          'OAuth registration was forbidden. Some providers require a registration token; ' +
+            'set MCPORTER_OAUTH_REGISTRATION_TOKEN and MCPORTER_OAUTH_REGISTRATION_HEADER (e.g. X-Figma-Token).'
+        );
+      }
       if (!response.ok) {
         try {
           const body = await response.clone().text();
