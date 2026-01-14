@@ -4,6 +4,7 @@ import http from 'node:http';
 import { URL } from 'node:url';
 import type { OAuthClientProvider } from '@modelcontextprotocol/sdk/client/auth.js';
 import type {
+  AuthorizationServerMetadata,
   OAuthClientInformationMixed,
   OAuthClientMetadata,
   OAuthTokens,
@@ -16,6 +17,8 @@ import { discoverOAuthMetadata, resolveOAuthScope } from './oauth-discovery.js';
 const CALLBACK_HOST = '127.0.0.1';
 const CALLBACK_PATH = '/';
 const DEFAULT_CALLBACK_PORT = 33418;
+const DEFAULT_CLIENT_URI = 'https://github.com/steipete/mcporter';
+const DEFAULT_GRANT_TYPES = ['authorization_code', 'refresh_token'];
 
 type OAuthClientMetadataWithApplication = OAuthClientMetadata & {
   application_type?: 'native';
@@ -154,11 +157,14 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     }
 
     let effectiveScope = 'mcp:tools';
+    let authorizationServerMetadata: AuthorizationServerMetadata | undefined;
     if (definition.command.kind === 'http') {
-      const { resourceMetadata, authorizationServerMetadata } = await discoverOAuthMetadata(
+      const discovery = await discoverOAuthMetadata(
         definition.command.url,
         logger
       );
+      authorizationServerMetadata = discovery.authorizationServerMetadata;
+      const resourceMetadata = discovery.resourceMetadata;
       effectiveScope = resolveOAuthScope({
         resourceMetadata,
         authorizationServerMetadata,
@@ -167,10 +173,27 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       logger.info(`Using OAuth scope '${effectiveScope}' for ${definition.name}.`);
     }
 
+    const grantTypes =
+      authorizationServerMetadata?.grant_types_supported?.filter((grant) =>
+        DEFAULT_GRANT_TYPES.includes(grant)
+      ) ?? DEFAULT_GRANT_TYPES;
+    if (grantTypes.length === 0) {
+      grantTypes.push(...DEFAULT_GRANT_TYPES);
+    }
+
+    const redirectUris = new Set<string>();
+    if (!overrideRedirect && listenHost === CALLBACK_HOST) {
+      redirectUris.add(`http://${CALLBACK_HOST}/`);
+      redirectUris.add(`http://${CALLBACK_HOST}:${DEFAULT_CALLBACK_PORT}/`);
+    } else {
+      redirectUris.add(redirectUrl.toString());
+    }
+
     const clientMetadata: OAuthClientMetadataWithApplication = {
       client_name: definition.clientName ?? `mcporter (${definition.name})`,
-      redirect_uris: [redirectUrl.toString()],
-      grant_types: ['authorization_code', 'refresh_token'],
+      client_uri: DEFAULT_CLIENT_URI,
+      redirect_uris: Array.from(redirectUris),
+      grant_types: grantTypes,
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
       scope: effectiveScope,
@@ -180,7 +203,19 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     logger.debug?.(
       `OAuth callback listener active at ${redirectUrl.toString()} (host=${listenHost}, port=${port}, path=${redirectUrl.pathname}).`
     );
-    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, clientMetadata);
+    logger.debug?.(
+      `OAuth registration redirect_uris for ${definition.name}: ${clientMetadata.redirect_uris.join(', ')}.`
+    );
+    logger.debug?.(
+      `OAuth registration grant_types for ${definition.name}: ${(clientMetadata.grant_types ?? []).join(', ')}.`
+    );
+    const provider = new PersistentOAuthClientProvider(
+      definition,
+      persistence,
+      redirectUrl,
+      logger,
+      clientMetadata
+    );
     provider.attachServer(server);
     return {
       provider,
@@ -280,6 +315,10 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   async saveClientInformation(clientInformation: OAuthClientInformationMixed): Promise<void> {
     await this.persistence.saveClientInfo(clientInformation);
     this.logger.info(`Saved OAuth client information for ${this.definition.name} (${this.persistence.describe()})`);
+    const hasSecret = 'client_secret' in clientInformation && Boolean(clientInformation.client_secret);
+    this.logger.debug?.(
+      `OAuth client registration for ${this.definition.name} returned ${hasSecret ? 'a client_secret' : 'no client_secret'}.`
+    );
   }
 
   async tokens(): Promise<OAuthTokens | undefined> {

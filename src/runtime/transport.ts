@@ -92,6 +92,15 @@ function createOAuthFetch(logger: Logger): typeof fetch {
       logger.debug?.(
         `OAuth registration response: ${response.status} ${response.statusText || ''}`.trim()
       );
+      if (!response.ok) {
+        try {
+          const body = await response.clone().text();
+          const preview = body.length > 800 ? `${body.slice(0, 800)}...` : body;
+          logger.debug?.(`OAuth registration error body: ${preview}`);
+        } catch {
+          // Ignore errors while reading the response body for debug logging.
+        }
+      }
     }
     return response;
   };
