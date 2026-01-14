@@ -88,6 +88,9 @@ export async function connectWithAuth(
           throw error;
         }
       } catch (authError) {
+        if (authError instanceof OAuthReconnectRequired) {
+          throw authError;
+        }
         logger.error('OAuth authorization failed while waiting for callback.', authError);
         throw authError;
       }
