@@ -85,6 +85,14 @@ export function parseCallArguments(args: string[]): CallArgsParseResult {
       index += 2;
       continue;
     }
+    // Warn on unknown flags to prevent them from being silently treated as positional args
+    if (token.startsWith('--') && !token.includes('=') && !token.includes(':')) {
+      throw new CliUsageError(
+        `Unknown flag '${token}' passed to call command.\n` +
+          `If you intended to pass a tool argument, use '${token.slice(2)}=<value>' or --args '{"${token.slice(2)}": ...}'.\n` +
+          `Run 'mcporter call --help' to see available flags.`
+      );
+    }
     positional.push(token);
     index += 1;
   }
