@@ -49,6 +49,10 @@ export function normalizeServerEntry(
       ? { args: ['auth', 'http://localhost:3000/oauth2callback'] }
       : oauthCommand;
 
+  // Normalize tool filtering options (camelCase takes precedence over snake_case)
+  const allowedTools = raw.allowedTools ?? raw.allowed_tools;
+  const blockedTools = raw.blockedTools ?? raw.blocked_tools;
+
   return {
     name,
     description,
@@ -63,6 +67,8 @@ export function normalizeServerEntry(
     sources,
     lifecycle,
     logging,
+    allowedTools,
+    blockedTools,
   };
 }
 

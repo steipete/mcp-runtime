@@ -172,7 +172,9 @@ class McpRuntime implements Runtime {
         cursor = response.nextCursor ?? undefined;
       } while (cursor);
 
-      return tools;
+      // Apply tool filtering based on server definition
+      const definition = this.definitions.get(server.trim());
+      return this.filterTools(tools, definition);
     } catch (error) {
       // Keep-alive STDIO transports often die when Chrome closes; drop the cached client
       // so the next call spins up a fresh process instead of reusing the broken handle.
@@ -189,6 +191,12 @@ class McpRuntime implements Runtime {
 
   // callTool executes a tool using the args provided by the caller.
   async callTool(server: string, toolName: string, options: CallOptions = {}): Promise<unknown> {
+    // Check if tool is blocked before attempting the call
+    const definition = this.definitions.get(server.trim());
+    if (definition && !this.isToolAllowed(toolName, definition)) {
+      throw new Error(`Tool '${toolName}' is not accessible on server '${server}' (blocked by configuration).`);
+    }
+
     try {
       const { client } = await this.connect(server);
       const params: CallToolRequest['params'] = {
@@ -310,6 +318,58 @@ class McpRuntime implements Runtime {
       const detail = closeError instanceof Error ? closeError.message : String(closeError);
       this.logger.warn(`Failed to reset '${normalized}' after error: ${detail}`);
     }
+  }
+
+  /**
+   * Check if a tool is allowed based on server's allowedTools/blockedTools configuration.
+   * - If allowedTools is specified (even empty), only tools in that list are allowed (allowlist mode).
+   *   An empty allowedTools array means ALL tools are blocked.
+   * - If blockedTools is specified (and allowedTools is not), tools in that list are blocked (blocklist mode).
+   *   An empty blockedTools array means ALL tools are allowed.
+   * - If neither is specified, all tools are allowed.
+   */
+  private isToolAllowed(toolName: string, definition: ServerDefinition | undefined): boolean {
+    if (!definition) {
+      return true;
+    }
+
+    // Allowlist takes precedence: if specified (even empty), only listed tools are allowed
+    // Empty allowedTools = block all tools
+    if (definition.allowedTools !== undefined) {
+      return definition.allowedTools.includes(toolName);
+    }
+
+    // Blocklist: if specified, listed tools are blocked
+    // Empty blockedTools = allow all tools
+    if (definition.blockedTools !== undefined) {
+      return !definition.blockedTools.includes(toolName);
+    }
+
+    // No filtering configured
+    return true;
+  }
+
+  /**
+   * Filter tools based on server's allowedTools/blockedTools configuration.
+   */
+  private filterTools(tools: ServerToolInfo[], definition: ServerDefinition | undefined): ServerToolInfo[] {
+    if (!definition) {
+      return tools;
+    }
+
+    // Allowlist takes precedence: if specified (even empty), only listed tools are shown
+    // Empty allowedTools = return no tools
+    if (definition.allowedTools !== undefined) {
+      return tools.filter((tool) => definition.allowedTools?.includes(tool.name));
+    }
+
+    // Blocklist: if specified, listed tools are hidden
+    // Empty blockedTools = return all tools
+    if (definition.blockedTools !== undefined) {
+      return tools.filter((tool) => !definition.blockedTools?.includes(tool.name));
+    }
+
+    return tools;
   }
 }
 
