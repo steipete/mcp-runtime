@@ -400,6 +400,49 @@ mcporter config --config ~/.mcporter/mcporter.json add global-server https://api
 
 Set `MCPORTER_CONFIG=~/.mcporter/mcporter.json` in your shell profile when you want that file to be the default everywhere (handy for `npx mcporter …` runs).
 
+### Tool Filtering (allowedTools / blockedTools)
+
+You can restrict which tools are accessible from a server by adding `allowedTools` (allowlist) or `blockedTools` (blocklist) to any server definition. This is useful for:
+
+- **Security:** Prevent AI agents from accessing dangerous tools (e.g., `send_message`, `delete_*`)
+- **Scoping:** Expose only the tools relevant to a specific workflow
+- **Safety:** Block write operations while allowing read-only access
+
+```jsonc
+{
+  "mcpServers": {
+    "slack": {
+      "command": "npx -y slack-mcp-server@latest --transport stdio",
+      "env": { "SLACK_MCP_XOXP_TOKEN": "${SLACK_TOKEN}" },
+      // Only allow read operations (allowlist mode)
+      "allowedTools": [
+        "channels_list",
+        "conversations_history",
+        "conversations_search_messages"
+      ]
+    },
+    "filesystem": {
+      "command": "npx -y @anthropic/mcp-server-filesystem",
+      // Block dangerous operations (blocklist mode)
+      "blockedTools": ["delete_file", "move_file", "write_file"]
+    }
+  }
+}
+```
+
+**How it works:**
+
+- **`allowedTools`** (allowlist): When specified, *only* these tools are accessible. All others are hidden and blocked.
+- **`blockedTools`** (blocklist): When specified, these tools are hidden and blocked. All others remain accessible.
+- **Precedence:** If both are specified, `allowedTools` takes precedence (blocklist is ignored).
+- **Empty arrays:** An empty `allowedTools` blocks all tools; an empty `blockedTools` allows all tools.
+
+Blocked tools are:
+1. Hidden from `mcporter list` output
+2. Rejected with a clear error message when called via `mcporter call`
+
+Snake_case variants (`allowed_tools`, `blocked_tools`) are also supported for consistency with other config fields.
+
 ## Testing and CI
 
 | Command | Purpose |

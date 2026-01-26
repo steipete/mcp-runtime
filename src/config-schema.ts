@@ -78,6 +78,11 @@ export const RawEntrySchema = z.object({
   bearer_token_env: z.string().optional(),
   lifecycle: RawLifecycleSchema.optional(),
   logging: RawLoggingSchema,
+  // Tool filtering: allowlist takes precedence over blocklist when both are specified
+  allowedTools: z.array(z.string()).optional(),
+  allowed_tools: z.array(z.string()).optional(),
+  blockedTools: z.array(z.string()).optional(),
+  blocked_tools: z.array(z.string()).optional(),
 });
 
 export const RawConfigSchema = z.object({
@@ -140,6 +145,10 @@ export interface ServerDefinition {
   readonly sources?: readonly ServerSource[];
   readonly lifecycle?: ServerLifecycle;
   readonly logging?: ServerLoggingOptions;
+  /** When specified, only these tools are accessible (allowlist). Takes precedence over blockedTools. */
+  readonly allowedTools?: readonly string[];
+  /** When specified, these tools are hidden and cannot be called (blocklist). Ignored if allowedTools is set. */
+  readonly blockedTools?: readonly string[];
 }
 
 export interface LoadConfigOptions {
