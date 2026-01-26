@@ -322,8 +322,10 @@ class McpRuntime implements Runtime {
 
   /**
    * Check if a tool is allowed based on server's allowedTools/blockedTools configuration.
-   * - If allowedTools is specified, only tools in that list are allowed (allowlist mode).
+   * - If allowedTools is specified (even empty), only tools in that list are allowed (allowlist mode).
+   *   An empty allowedTools array means ALL tools are blocked.
    * - If blockedTools is specified (and allowedTools is not), tools in that list are blocked (blocklist mode).
+   *   An empty blockedTools array means ALL tools are allowed.
    * - If neither is specified, all tools are allowed.
    */
   private isToolAllowed(toolName: string, definition: ServerDefinition | undefined): boolean {
@@ -331,13 +333,15 @@ class McpRuntime implements Runtime {
       return true;
     }
 
-    // Allowlist takes precedence: if specified, only listed tools are allowed
-    if (definition.allowedTools && definition.allowedTools.length > 0) {
+    // Allowlist takes precedence: if specified (even empty), only listed tools are allowed
+    // Empty allowedTools = block all tools
+    if (definition.allowedTools !== undefined) {
       return definition.allowedTools.includes(toolName);
     }
 
     // Blocklist: if specified, listed tools are blocked
-    if (definition.blockedTools && definition.blockedTools.length > 0) {
+    // Empty blockedTools = allow all tools
+    if (definition.blockedTools !== undefined) {
       return !definition.blockedTools.includes(toolName);
     }
 
@@ -353,13 +357,15 @@ class McpRuntime implements Runtime {
       return tools;
     }
 
-    // Allowlist takes precedence
-    if (definition.allowedTools && definition.allowedTools.length > 0) {
+    // Allowlist takes precedence: if specified (even empty), only listed tools are shown
+    // Empty allowedTools = return no tools
+    if (definition.allowedTools !== undefined) {
       return tools.filter((tool) => definition.allowedTools?.includes(tool.name));
     }
 
-    // Blocklist
-    if (definition.blockedTools && definition.blockedTools.length > 0) {
+    // Blocklist: if specified, listed tools are hidden
+    // Empty blockedTools = return all tools
+    if (definition.blockedTools !== undefined) {
       return tools.filter((tool) => !definition.blockedTools?.includes(tool.name));
     }
 

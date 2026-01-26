@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { createRuntime } from '../src/runtime.js';
 import type { ServerDefinition } from '../src/config-schema.js';
+import { createRuntime } from '../src/runtime.js';
 
 /**
  * Tests for tool filtering functionality (allowedTools / blockedTools).
