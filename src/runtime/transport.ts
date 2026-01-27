@@ -125,23 +125,23 @@ export async function createClientContext(
       };
 
       const attemptConnect = async () => {
-        const streamableTransport = new StreamableHTTPClientTransport(command.url, baseOptions);
-        try {
-          await connectWithAuth(client, streamableTransport, oauthSession, logger, {
+        const streamableTransport = await connectWithAuth(
+          client,
+          () => new StreamableHTTPClientTransport(command.url, baseOptions),
+          oauthSession,
+          logger,
+          {
             serverName: activeDefinition.name,
             maxAttempts: options.maxOAuthAttempts,
             oauthTimeoutMs: options.oauthTimeoutMs,
-          });
-          return {
-            client,
-            transport: streamableTransport,
-            definition: activeDefinition,
-            oauthSession,
-          } as ClientContext;
-        } catch (error) {
-          await closeTransportAndWait(logger, streamableTransport).catch(() => {});
-          throw error;
-        }
+          }
+        );
+        return {
+          client,
+          transport: streamableTransport,
+          definition: activeDefinition,
+          oauthSession,
+        } as ClientContext;
       };
 
       try {
@@ -166,18 +166,23 @@ export async function createClientContext(
         if (primaryError instanceof Error) {
           logger.info(`Falling back to SSE transport for '${activeDefinition.name}': ${primaryError.message}`);
         }
-        const sseTransport = new SSEClientTransport(command.url, {
-          ...baseOptions,
-        });
         try {
-          await connectWithAuth(client, sseTransport, oauthSession, logger, {
-            serverName: activeDefinition.name,
-            maxAttempts: options.maxOAuthAttempts,
-            oauthTimeoutMs: options.oauthTimeoutMs,
-          });
+          const sseTransport = await connectWithAuth(
+            client,
+            () =>
+              new SSEClientTransport(command.url, {
+                ...baseOptions,
+              }),
+            oauthSession,
+            logger,
+            {
+              serverName: activeDefinition.name,
+              maxAttempts: options.maxOAuthAttempts,
+              oauthTimeoutMs: options.oauthTimeoutMs,
+            }
+          );
           return { client, transport: sseTransport, definition: activeDefinition, oauthSession };
         } catch (sseError) {
-          await closeTransportAndWait(logger, sseTransport).catch(() => {});
           await oauthSession?.close().catch(() => {});
           if (sseError instanceof OAuthTimeoutError) {
             throw sseError;

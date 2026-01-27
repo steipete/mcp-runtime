@@ -6,6 +6,11 @@ import { isUnauthorizedError } from '../runtime-oauth-support.js';
 
 export const DEFAULT_OAUTH_CODE_TIMEOUT_MS = 60_000;
 
+type OAuthTransport = Transport & {
+  close(): Promise<void>;
+  finishAuth?: (authorizationCode: string) => Promise<void>;
+};
+
 export class OAuthTimeoutError extends Error {
   public readonly timeoutMs: number;
   public readonly serverName: string;
@@ -21,21 +26,20 @@ export class OAuthTimeoutError extends Error {
 
 export async function connectWithAuth(
   client: Client,
-  transport: Transport & {
-    close(): Promise<void>;
-    finishAuth?: (authorizationCode: string) => Promise<void>;
-  },
+  createTransport: () => OAuthTransport,
   session: OAuthSession | undefined,
   logger: Logger,
   options: { serverName?: string; maxAttempts?: number; oauthTimeoutMs?: number } = {}
-): Promise<void> {
+): Promise<OAuthTransport> {
   const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS } = options;
   let attempt = 0;
   while (true) {
+    const transport = createTransport();
     try {
       await client.connect(transport);
-      return;
+      return transport;
     } catch (error) {
+      await transport.close().catch(() => {});
       if (!isUnauthorizedError(error) || !session) {
         throw error;
       }
