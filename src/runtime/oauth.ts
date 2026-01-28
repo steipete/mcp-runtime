@@ -19,6 +19,16 @@ export class OAuthTimeoutError extends Error {
   }
 }
 
+export class OAuthReconnectRequired extends Error {
+  public readonly serverName?: string;
+
+  constructor(serverName?: string) {
+    super(`OAuth tokens acquired for '${serverName ?? 'unknown'}'; reconnect required.`);
+    this.name = 'OAuthReconnectRequired';
+    this.serverName = serverName;
+  }
+}
+
 export async function connectWithAuth(
   client: Client,
   transport: Transport & {
@@ -30,6 +40,9 @@ export async function connectWithAuth(
   options: { serverName?: string; maxAttempts?: number; oauthTimeoutMs?: number } = {}
 ): Promise<void> {
   const { serverName, maxAttempts = 3, oauthTimeoutMs = DEFAULT_OAUTH_CODE_TIMEOUT_MS } = options;
+  logger.debug?.(
+    `connectWithAuth: server=${serverName ?? 'unknown'}, maxAttempts=${maxAttempts}, session=${session ? 'yes' : 'no'}.`
+  );
   let attempt = 0;
   while (true) {
     try {
@@ -37,14 +50,29 @@ export async function connectWithAuth(
       return;
     } catch (error) {
       if (!isUnauthorizedError(error) || !session) {
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.debug?.(`connectWithAuth: non-auth error (or no session): ${detail}`);
         throw error;
       }
       attempt += 1;
+      logger.debug?.(`connectWithAuth: auth required (attempt ${attempt}/${maxAttempts}).`);
       if (attempt > maxAttempts) {
         throw error;
       }
+      if (session.didStartAuthorization && !session.didStartAuthorization()) {
+        const detail = error instanceof Error ? error.message : String(error);
+        logger.warn(`connectWithAuth: OAuth session never started for '${serverName ?? 'unknown'}'.`);
+        throw new Error(
+          `OAuth flow failed before a browser authorization could begin. ` +
+            `This may mean the server rejected dynamic client registration. ` +
+            `Original error: ${detail}`
+        );
+      }
       logger.warn(`OAuth authorization required for '${serverName ?? 'unknown'}'. Waiting for browser approval...`);
       try {
+        logger.debug?.(
+          `connectWithAuth: waiting for OAuth callback (timeout ${oauthTimeoutMs ?? DEFAULT_OAUTH_CODE_TIMEOUT_MS}ms).`
+        );
         const code = await waitForAuthorizationCodeWithTimeout(
           session,
           logger,
@@ -54,11 +82,15 @@ export async function connectWithAuth(
         if (typeof transport.finishAuth === 'function') {
           await transport.finishAuth(code);
           logger.info('Authorization code accepted. Retrying connection...');
+          throw new OAuthReconnectRequired(serverName);
         } else {
           logger.warn('Transport does not support finishAuth; cannot complete OAuth flow automatically.');
           throw error;
         }
       } catch (authError) {
+        if (authError instanceof OAuthReconnectRequired) {
+          throw authError;
+        }
         logger.error('OAuth authorization failed while waiting for callback.', authError);
         throw authError;
       }
@@ -77,6 +109,7 @@ export function waitForAuthorizationCodeWithTimeout(
     return session.waitForAuthorizationCode();
   }
   const displayName = serverName ?? 'unknown';
+  logger.debug?.(`waitForAuthorizationCodeWithTimeout: waiting for '${displayName}'.`);
   return new Promise<string>((resolve, reject) => {
     const timer = setTimeout(() => {
       const error = new OAuthTimeoutError(displayName, timeoutMs);
