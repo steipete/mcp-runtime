@@ -100,6 +100,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
   ): Promise<{
     provider: PersistentOAuthClientProvider;
     close: () => Promise<void>;
+    registrationEndpoint?: URL;
   }> {
     const persistence = await buildOAuthPersistence(definition, logger);
 
@@ -161,12 +162,21 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
 
     let effectiveScope = 'mcp:tools';
     let authorizationServerMetadata: AuthorizationServerMetadata | undefined;
+    let registrationEndpoint: URL | undefined;
     if (definition.command.kind === 'http') {
       const discovery = await discoverOAuthMetadata(
         definition.command.url,
         logger
       );
       authorizationServerMetadata = discovery.authorizationServerMetadata;
+      const registrationEndpointRaw = authorizationServerMetadata?.registration_endpoint;
+      if (registrationEndpointRaw) {
+        try {
+          registrationEndpoint = new URL(registrationEndpointRaw);
+        } catch {
+          registrationEndpoint = undefined;
+        }
+      }
       const resourceMetadata = discovery.resourceMetadata;
       effectiveScope = resolveOAuthScope({
         resourceMetadata,
@@ -244,6 +254,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       close: async () => {
         await provider.close();
       },
+      registrationEndpoint,
     };
   }
 
@@ -413,18 +424,20 @@ export interface OAuthSession {
   };
   waitForAuthorizationCode: () => Promise<string>;
   didStartAuthorization: () => boolean;
+  registrationEndpoint?: URL;
   close: () => Promise<void>;
 }
 
 // createOAuthSession spins up a file-backed OAuth provider and callback server for the target definition.
 export async function createOAuthSession(definition: ServerDefinition, logger: OAuthLogger): Promise<OAuthSession> {
-  const { provider, close } = await PersistentOAuthClientProvider.create(definition, logger);
+  const { provider, close, registrationEndpoint } = await PersistentOAuthClientProvider.create(definition, logger);
   const waitForAuthorizationCode = () => provider.waitForAuthorizationCode();
   const didStartAuthorization = () => provider.didStartAuthorization();
   return {
     provider,
     waitForAuthorizationCode,
     didStartAuthorization,
+    registrationEndpoint,
     close,
   };
 }

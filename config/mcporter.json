@@ -30,6 +30,11 @@
       "description": "DeepWiki MCP server for querying public code/docs without local checkout.",
       "baseUrl": "https://mcp.deepwiki.com/mcp"
     },
+    "figma": {
+      "description": "Figma MCP server (requires OAuth).",
+      "baseUrl": "https://mcp.figma.com/mcp",
+      "auth": "oauth"
+    },
     "linear": {
       "description": "Hosted Linear MCP; exposes issue search, create, and workflow tooling.",
       "baseUrl": "https://mcp.linear.app/sse",

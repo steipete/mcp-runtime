@@ -45,27 +45,44 @@ function resolveFetchUrl(input: RequestInfo | URL): URL | undefined {
   return undefined;
 }
 
-function isRegistrationRequest(url: URL | undefined, method: string): boolean {
+function normalizePath(pathname: string): string {
+  if (pathname.length > 1 && pathname.endsWith('/')) {
+    return pathname.replace(/\/+$/, '');
+  }
+  return pathname;
+}
+
+function isRegistrationRequest(
+  url: URL | undefined,
+  method: string,
+  registrationEndpoint?: URL
+): boolean {
   if (!url) {
     return false;
   }
   if (method.toUpperCase() !== 'POST') {
     return false;
   }
-  return url.pathname.endsWith('/register');
+  if (registrationEndpoint) {
+    return (
+      url.origin === registrationEndpoint.origin &&
+      normalizePath(url.pathname) === normalizePath(registrationEndpoint.pathname)
+    );
+  }
+  return /(^|\/)register\/?$/.test(url.pathname);
 }
 
-function createOAuthFetch(logger: Logger): typeof fetch {
+function createOAuthFetch(logger: Logger, registrationEndpoint?: URL): typeof fetch {
   const rawHeaderName = process.env[REGISTRATION_HEADER_ENV]?.trim();
   const rawToken = process.env[REGISTRATION_TOKEN_ENV]?.trim();
   const headerName = rawHeaderName && rawHeaderName.length > 0 ? rawHeaderName : 'Authorization';
   const headerValue =
     rawToken && headerName.toLowerCase() === 'authorization' ? `Bearer ${rawToken}` : rawToken ?? undefined;
 
-  return async (input: RequestInfo | URL, init?: RequestInit) => {
+  const wrapped = (async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = resolveFetchUrl(input);
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
-    const isRegistration = isRegistrationRequest(url, method);
+    const isRegistration = isRegistrationRequest(url, method, registrationEndpoint);
     let nextInit = init;
 
     if (isRegistration) {
@@ -109,7 +126,9 @@ function createOAuthFetch(logger: Logger): typeof fetch {
       }
     }
     return response;
-  };
+  }) as typeof fetch;
+  wrapped.preconnect = fetch.preconnect?.bind(fetch) ?? (() => {});
+  return wrapped;
 }
 
 export interface ClientContext {
@@ -222,7 +241,9 @@ export async function createClientContext(
       const requestInit: RequestInit | undefined = resolvedHeaders
         ? { headers: resolvedHeaders as HeadersInit }
         : undefined;
-      const oauthFetch = oauthSession ? createOAuthFetch(logger) : undefined;
+      const oauthFetch = oauthSession
+        ? createOAuthFetch(logger, oauthSession.registrationEndpoint)
+        : undefined;
       const baseOptions = {
         requestInit,
         authProvider: oauthSession?.provider,

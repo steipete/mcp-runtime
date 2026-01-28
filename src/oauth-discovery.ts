@@ -97,7 +97,7 @@ export function resolveOAuthScope(options: {
     if (supportedScopes.includes('mcp:connect')) {
       return 'mcp:connect';
     }
-    return supportedScopes[0];
+    return supportedScopes[0]!;
   }
 
   return options.fallbackScope ?? 'mcp:tools';
