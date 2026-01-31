@@ -154,6 +154,61 @@ describe('createCallResult json extraction', () => {
     const result = createCallResult(response);
     expect(result.json()).toEqual({ nested: true });
   });
+
+  it('collects json from multiple text content blocks into an array', () => {
+    const response = {
+      content: [
+        {
+          type: 'text',
+          text: '{"id": 1, "name": "first"}',
+        },
+        {
+          type: 'text',
+          text: '{"id": 2, "name": "second"}',
+        },
+        {
+          type: 'text',
+          text: '{"id": 3, "name": "third"}',
+        },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([
+      { id: 1, name: 'first' },
+      { id: 2, name: 'second' },
+      { id: 3, name: 'third' },
+    ]);
+  });
+
+  it('returns single object (not array) when only one content block has json', () => {
+    const response = {
+      content: [
+        {
+          type: 'text',
+          text: '{"id": 1, "name": "only"}',
+        },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual({ id: 1, name: 'only' });
+  });
+
+  it('collects json from mixed json and text content blocks', () => {
+    const response = {
+      content: [
+        {
+          type: 'json',
+          json: { id: 1 },
+        },
+        {
+          type: 'text',
+          text: '{"id": 2}',
+        },
+      ],
+    };
+    const result = createCallResult(response);
+    expect(result.json()).toEqual([{ id: 1 }, { id: 2 }]);
+  });
 });
 
 describe('createCallResult structured accessors', () => {
