@@ -151,7 +151,7 @@ export async function createClientContext(
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
           if (options.maxOAuthAttempts !== 0) {
-            const promoted = maybeEnableOAuth(activeDefinition, logger);
+            const promoted = await maybeEnableOAuth(activeDefinition, logger);
             if (promoted) {
               activeDefinition = promoted;
               options.onDefinitionPromoted?.(promoted);
@@ -183,7 +183,7 @@ export async function createClientContext(
             throw sseError;
           }
           if (isUnauthorizedError(sseError) && options.maxOAuthAttempts !== 0) {
-            const promoted = maybeEnableOAuth(activeDefinition, logger);
+            const promoted = await maybeEnableOAuth(activeDefinition, logger);
             if (promoted) {
               activeDefinition = promoted;
               options.onDefinitionPromoted?.(promoted);
