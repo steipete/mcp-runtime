@@ -8,6 +8,7 @@ import { resolveEnvValue, withEnvOverrides } from '../env.js';
 import type { Logger } from '../logging.js';
 import { createOAuthSession, type OAuthSession } from '../oauth.js';
 import { readCachedAccessToken } from '../oauth-persistence.js';
+import { tryRefreshTokens } from '../oauth-refresh.js';
 import { materializeHeaders } from '../runtime-header-utils.js';
 import { isUnauthorizedError, maybeEnableOAuth } from '../runtime-oauth-support.js';
 import { closeTransportAndWait } from '../runtime-process-utils.js';
@@ -150,6 +151,32 @@ export async function createClientContext(
         if (isUnauthorizedError(primaryError)) {
           await oauthSession?.close().catch(() => {});
           oauthSession = undefined;
+          
+          // Try to refresh the token before falling back to full OAuth flow
+          if (activeDefinition.auth === 'oauth') {
+            logger.info(`Token expired for '${activeDefinition.name}', attempting refresh...`);
+            const refreshedToken = await tryRefreshTokens(activeDefinition, logger);
+            if (refreshedToken) {
+              // Update the definition with the new token and retry
+              const existingHeaders = activeDefinition.command.kind === 'http' 
+                ? activeDefinition.command.headers ?? {} 
+                : {};
+              activeDefinition = {
+                ...activeDefinition,
+                command: {
+                  ...activeDefinition.command,
+                  headers: {
+                    ...existingHeaders,
+                    Authorization: `Bearer ${refreshedToken}`,
+                  },
+                },
+              } as ServerDefinition;
+              options.onDefinitionPromoted?.(activeDefinition);
+              continue; // Retry with the refreshed token
+            }
+            logger.info(`Token refresh failed for '${activeDefinition.name}', falling back to OAuth flow...`);
+          }
+          
           if (options.maxOAuthAttempts !== 0) {
             const promoted = maybeEnableOAuth(activeDefinition, logger);
             if (promoted) {
