@@ -55,6 +55,34 @@ function openExternal(url: string) {
   }
 }
 
+// discoverScope fetches the protected resource metadata to determine server-supported OAuth scopes.
+async function discoverScope(definition: ServerDefinition, logger: OAuthLogger): Promise<string | undefined> {
+  if (definition.command.kind !== 'http') {
+    return undefined;
+  }
+  const baseUrl = new URL(definition.command.url.toString());
+  // RFC 9728: /.well-known/oauth-protected-resource relative to the resource origin
+  const wellKnownUrl = new URL('/.well-known/oauth-protected-resource', baseUrl.origin);
+  try {
+    const response = await fetch(wellKnownUrl.toString(), {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) {
+      return undefined;
+    }
+    const metadata = (await response.json()) as { scopes_supported?: string[] };
+    if (Array.isArray(metadata.scopes_supported) && metadata.scopes_supported.length > 0) {
+      const scope = metadata.scopes_supported.join(' ');
+      logger.info(`Discovered OAuth scopes for '${definition.name}': ${scope}`);
+      return scope;
+    }
+  } catch {
+    // Discovery is best-effort; fall back to no scope constraint
+  }
+  return undefined;
+}
+
 // PersistentOAuthClientProvider persists OAuth session artifacts to disk and captures callback redirects.
 class PersistentOAuthClientProvider implements OAuthClientProvider {
   private readonly metadata: OAuthClientMetadata;
@@ -68,7 +96,8 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     private readonly definition: ServerDefinition,
     persistence: OAuthPersistence,
     redirectUrl: URL,
-    logger: OAuthLogger
+    logger: OAuthLogger,
+    scope?: string
   ) {
     this.redirectUrlValue = redirectUrl;
     this.logger = logger;
@@ -79,7 +108,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'mcp:tools',
+      ...(scope ? { scope } : {}),
     };
   }
 
@@ -90,6 +119,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
     provider: PersistentOAuthClientProvider;
     close: () => Promise<void>;
   }> {
+    const scope = await discoverScope(definition, logger);
     const persistence = await buildOAuthPersistence(definition, logger);
 
     const server = http.createServer();
@@ -122,7 +152,7 @@ class PersistentOAuthClientProvider implements OAuthClientProvider {
       redirectUrl.pathname = callbackPath;
     }
 
-    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger);
+    const provider = new PersistentOAuthClientProvider(definition, persistence, redirectUrl, logger, scope);
     provider.attachServer(server);
     return {
       provider,
