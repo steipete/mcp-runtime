@@ -17,21 +17,21 @@ describe('maybeEnableOAuth', () => {
     source: { kind: 'local', path: '<adhoc>' },
   };
 
-  it('returns an updated definition for ad-hoc HTTP servers', () => {
-    const updated = maybeEnableOAuth(baseDefinition, logger as never);
+  it('returns an updated definition for ad-hoc HTTP servers', async () => {
+    const updated = await maybeEnableOAuth(baseDefinition, logger as never);
     expect(updated).toBeDefined();
     expect(updated?.auth).toBe('oauth');
     expect(updated?.tokenCacheDir).toBeUndefined();
     expect(logger.info).toHaveBeenCalled();
   });
 
-  it('does not mutate non-ad-hoc servers', () => {
+  it('skips non-ad-hoc servers without OAuth metadata', async () => {
     const def: ServerDefinition = {
       name: 'local-server',
       command: { kind: 'http', url: new URL('https://example.com') },
       source: { kind: 'local', path: '/tmp/config.json' },
     };
-    const updated = maybeEnableOAuth(def, logger as never);
+    const updated = await maybeEnableOAuth(def, logger as never);
     expect(updated).toBeUndefined();
   });
 });
