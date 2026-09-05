@@ -2,9 +2,9 @@
 
 ## [0.13.10] - Unreleased
 
-### Daemon
-
+- Preserve explicit inline server definitions during CLI generation when `--config` is also supplied, so unrelated or same-name configured servers cannot replace the tool-discovery target. (PR #350)
 - Report detached daemon launch failures with the executable and OS error instead of crashing the parent CLI or waiting for a readiness timeout. (PRs #347 and #351, thanks @SebTardif)
+- Refresh generated CLI bundling and URI parsing dependencies and upgrade test coverage tooling to Vitest 5, preserving Node 24 support and the 48-hour dependency release-age policy. (PR #349)
 
 ## [0.13.9] - 2026-09-05
 
