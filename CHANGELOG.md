@@ -2,7 +2,9 @@
 
 ## [0.13.10] - Unreleased
 
-- Report detached daemon launch failures with the executable and OS error instead of crashing the parent CLI or waiting for a readiness timeout. (PR #347, thanks @SebTardif)
+### Daemon
+
+- Report detached daemon launch failures with the executable and OS error instead of crashing the parent CLI or waiting for a readiness timeout. (PRs #347 and #351, thanks @SebTardif)
 
 ## [0.13.9] - 2026-09-05
 
