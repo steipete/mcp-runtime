@@ -125,7 +125,11 @@ await server.connect(new StdioServerTransport());
           { ...definition, env: { ...env, PATH: '/explicit-different-path' } },
           { ...definition, env: { ...env, MCPORTER_CHROME_DEVTOOLS_RELAY_URL: 'http://127.0.0.1:1' } },
           { ...definition, command: { ...definition.command, args: ['--browserUrl', 'http://127.0.0.1:9222'] } },
-          { ...definition, command: { ...definition.command, args: [] } },
+          { ...definition, command: { ...definition.command, args: ['--wsEndpoint', 'ws://127.0.0.1:9222'] } },
+          {
+            ...definition,
+            command: { ...definition.command, command: 'sh', args: ['-c', 'chrome-devtools-mcp --autoConnect'] },
+          },
         ]) {
           const c = new DaemonClient({ configPath: '' });
           c.setDefinitions([incompatible]);

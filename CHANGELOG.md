@@ -2,6 +2,10 @@
 
 ## [0.13.11] - Unreleased
 
+### Chrome relay
+
+- Restore CLI generation and tool discovery for plain `chrome-devtools-mcp` launches without requiring an existing-Chrome owner, while retaining canonical ownership checks for auto-connect and refusing direct browser selectors and ambiguous wrappers. (PR #352)
+
 ## [0.13.10] - 2026-09-05
 
 **Highlights:** Generated CLIs keep the intended server when a config is supplied, and daemon launch failures report the executable and OS error immediately.

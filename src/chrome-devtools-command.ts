@@ -67,6 +67,23 @@ export interface ChromeDevtoolsAutoConnectArgs {
   readonly withoutAutoConnect: readonly string[];
 }
 
+export function isExistingChromeDevtoolsCommand(command: string, args: readonly string[]): boolean {
+  if (isAmbiguousChromeDevtoolsAutoConnectCommand(command, args)) return true;
+  if (resolveChromeDevtoolsAutoConnectCommand(command, args).enabled) return true;
+  const target = resolveChromeDevtoolsTarget(command, args);
+  // Only a resolved target proves a plain launch; opaque wrappers may hide browser selectors.
+  if (!target) return true;
+  return target.args.some((arg) => {
+    const option = arg.split('=')[0] ?? arg;
+    // yargs accepts selectors inside short-option groups, including attached values.
+    return (
+      CONNECTION_VALUE_FLAGS.has(option) ||
+      (/^-[^-]/u.test(option) &&
+        [...CONNECTION_VALUE_FLAGS].some((flag) => flag.length === 2 && option.includes(flag.slice(1))))
+    );
+  });
+}
+
 export function isAmbiguousChromeDevtoolsAutoConnectCommand(command: string, args: readonly string[]): boolean {
   if (isChromeDevtoolsToken(command)) return false;
   if (isSupportedPackageLauncher(command)) {

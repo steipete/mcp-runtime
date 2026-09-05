@@ -28,7 +28,7 @@ function fixture(chrome = false) {
         command: {
           kind: 'stdio',
           command: chrome ? 'chrome-devtools-mcp' : process.execPath,
-          args: [],
+          args: chrome ? ['--autoConnect'] : [],
           cwd: process.cwd(),
         },
         lifecycle: { mode: 'keep-alive', idleTimeoutMs: month },

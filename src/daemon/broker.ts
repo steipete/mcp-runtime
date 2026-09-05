@@ -17,8 +17,12 @@ import { createNonInteractiveElicitationResponder, NON_INTERACTIVE_ELICITATION_H
 import { isOAuthFlowError, resolveOAuthTimeoutFromEnv } from '../runtime/oauth.js';
 import { filterTools, isToolAllowed } from '../tool-filters.js';
 import { getChromeDevtoolsRelayDecision } from '../chrome-devtools-relay.js';
-import { BrowserOwner } from './browser-owner.js';
-import { connectionIdentity, isChromeDefinition, type ResolvedServerDefinition } from './connection-identity.js';
+import { BrowserOwner, BrowserOwnerConflict } from './browser-owner.js';
+import {
+  connectionIdentity,
+  isExistingChromeDefinition,
+  type ResolvedServerDefinition,
+} from './connection-identity.js';
 import type { CallToolParams, DaemonRequest, ListToolsParams, StatusResult } from './protocol.js';
 import { decodeView } from './view-codec.js';
 import { authorizeBrokerDefinition } from './transport-authority.js';
@@ -135,9 +139,9 @@ export class DaemonBroker {
       );
     if (params.timeoutMs !== undefined && (!Number.isFinite(params.timeoutMs) || params.timeoutMs <= 0))
       throw new BrokerError('invalid_params', 'Invalid timeout.');
-    const chrome = isChromeDefinition(viewDefinition);
+    const chrome = isExistingChromeDefinition(viewDefinition);
     if (chrome && JSON.stringify(view.clientInfo) !== JSON.stringify({ name: 'mcporter', version: MCPORTER_VERSION }))
-      throw new BrokerError('browser_owner_conflict', 'Existing Chrome requires the canonical MCP client identity.');
+      throw new BrowserOwnerConflict('existing Chrome requires the canonical MCP client identity');
     const definition = this.owner.reserve(viewDefinition);
     const identity = connectionIdentity(definition);
     view.active++;

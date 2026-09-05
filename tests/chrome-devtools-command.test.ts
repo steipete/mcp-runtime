@@ -2,12 +2,70 @@ import { describe, expect, it } from 'vitest';
 import {
   isAmbiguousChromeDevtoolsAutoConnectCommand,
   isChromeDevtoolsToken,
+  isExistingChromeDevtoolsCommand,
   replaceChromeDevtoolsAutoConnectArgs,
   resolveChromeDevtoolsAutoConnectArgs,
   resolveChromeDevtoolsAutoConnectCommand,
 } from '../src/chrome-devtools-command.js';
 
 describe('chrome-devtools autoConnect argument resolution', () => {
+  it.each([
+    ['chrome-devtools-mcp', []],
+    ['npx', ['-y', 'chrome-devtools-mcp']],
+    ['bunx', ['chrome-devtools-mcp@latest', '--headless']],
+    ['npx', ['-w', 'workspace', 'chrome-devtools-mcp']],
+    ['npx', ['-y', 'chrome-devtools-mcp', '--autoConnect=false']],
+    ['chrome-devtools-mcp', ['--no-auto-connect']],
+  ])('does not claim existing Chrome for plain launch %s %j', (command, args) => {
+    expect(isExistingChromeDevtoolsCommand(command, args)).toBe(false);
+  });
+
+  it.each([
+    '--browserUrl',
+    '--browser-url',
+    '-u',
+    '--wsEndpoint',
+    '--ws-endpoint',
+    '-w',
+    '--channel',
+    '--executablePath',
+    '--executable-path',
+    '-e',
+    '--userDataDir',
+    '--user-data-dir',
+    '--wsHeaders',
+    '--ws-headers',
+  ])('keeps connection selector %s under existing-Chrome authority', (flag) => {
+    for (const args of [[flag, 'synthetic'], [`${flag}=synthetic`]]) {
+      expect(isExistingChromeDevtoolsCommand('chrome-devtools-mcp', args)).toBe(true);
+      expect(isExistingChromeDevtoolsCommand('npx', ['-y', 'chrome-devtools-mcp', ...args])).toBe(true);
+    }
+    if (flag.length === 2) {
+      expect(isExistingChromeDevtoolsCommand('chrome-devtools-mcp', [`${flag}synthetic`])).toBe(true);
+      expect(isExistingChromeDevtoolsCommand('npx', ['-y', 'chrome-devtools-mcp', `${flag}synthetic`])).toBe(true);
+      for (const args of [
+        [`-x${flag.slice(1)}`, 'synthetic'],
+        [`-x${flag.slice(1)}synthetic`],
+        [`-x${flag.slice(1)}=synthetic`],
+      ]) {
+        expect(isExistingChromeDevtoolsCommand('chrome-devtools-mcp', args)).toBe(true);
+        expect(isExistingChromeDevtoolsCommand('npx', ['-y', 'chrome-devtools-mcp', ...args])).toBe(true);
+      }
+    }
+  });
+
+  it.each([
+    ['npx', ['-y', 'chrome-devtools-mcp', '--autoConnect']],
+    ['chrome-devtools-mcp', ['--auto-connect']],
+    ['sh', ['-c', 'chrome-devtools-mcp --autoConnect']],
+    ['npx', ['--call=chrome-devtools-mcp --autoConnect']],
+    ['npm', ['exec', '--', 'chrome-devtools-mcp', '--autoConnect']],
+    ['sh', ['-c', 'chrome-devtools-mcp --browserUrl=http://127.0.0.1:9222']],
+    ['sh', ['-c', '$CHROME_LAUNCH']],
+  ])('keeps existing-browser launch %s %j under authority', (command, args) => {
+    expect(isExistingChromeDevtoolsCommand(command, args)).toBe(true);
+  });
+
   it.each([
     'chrome-devtools-mcp',
     'chrome-devtools-mcp@latest',

@@ -1,6 +1,6 @@
 import { DEFAULT_INHERITED_ENV_VARS } from '@modelcontextprotocol/client/stdio';
 import { withRuntimeEnvironment } from './environment.js';
-import { isChromeDefinition } from '../daemon/connection-identity.js';
+import { isExistingChromeDefinition } from '../daemon/connection-identity.js';
 import {
   Client,
   type ClientOptions,
@@ -143,7 +143,7 @@ async function createStdioClientContext(
   };
   if (
     isBrokerDefinition(definition) &&
-    isChromeDefinition(definition) &&
+    isExistingChromeDefinition(definition) &&
     resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, definition.env) !== 'off'
   ) {
     mergedEnv.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = 'require';
@@ -165,7 +165,7 @@ async function createStdioClientContext(
       mergedEnv as NodeJS.ProcessEnv,
       { onDecision: (decision) => (relayDecision = decision) },
       isBrokerDefinition(definition) &&
-        isChromeDefinition(definition) &&
+        isExistingChromeDefinition(definition) &&
         resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, definition.env) !== 'off'
         ? 'require'
         : definition.chromeDevtoolsRelay

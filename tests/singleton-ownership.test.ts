@@ -109,7 +109,7 @@ describe('single-user connection and owner contracts', () => {
     expect(explicit.env?.SHLVL).toBe('2');
     expect(connectionIdentity(explicit)).not.toBe(connectionIdentity(direct));
   });
-  it('does not let unsupported canonical siblings poison a valid existing-browser owner', () => {
+  it('does not let plain Chrome launches reserve or disturb an existing-browser owner', () => {
     const saved = process.env.MCPORTER_DAEMON_DIR;
     process.env.MCPORTER_DAEMON_DIR = path.join(os.userInfo().homedir, '.mcporter');
     try {
@@ -125,8 +125,11 @@ describe('single-user connection and owner contracts', () => {
         },
       };
       const owner = new BrowserOwner([chrome(), sibling]);
+      expect(owner.reserve(sibling)).toBe(sibling);
+      expect(owner.reserved).toBe(false);
       expect(owner.reserve(chrome())).toEqual(chrome());
-      expect(() => owner.reserve(sibling)).toThrow(BrowserOwnerConflict);
+      expect(owner.reserve(sibling)).toBe(sibling);
+      expect(owner.reserved).toBe(true);
       expect(owner.reserve(chrome())).toEqual(chrome());
       const conflicting = new BrowserOwner([chrome(), chrome('off')]);
       expect(() => conflicting.reserve(chrome())).toThrow(BrowserOwnerConflict);
@@ -163,6 +166,19 @@ describe('single-user connection and owner contracts', () => {
       createClientContext(chrome(), { info() {}, warn() {}, error() {} }, { name: 'fixture', version: '1' })
     ).rejects.toMatchObject({ code: 'browser_owner_conflict' });
   });
+  it.each(['--autoConnect', '--browserUrl=http://127.0.0.1:9222'])(
+    'rejects programmatic Chrome setup with interpolated %s before launch',
+    async (target) => {
+      const definition: ServerDefinition = {
+        ...chrome(),
+        command: { kind: 'stdio', command: 'chrome-devtools-mcp', args: ['${CHROME_TARGET}'], cwd: os.tmpdir() },
+        env: { CHROME_TARGET: target },
+      };
+      await expect(
+        createClientContext(definition, { info() {}, warn() {}, error() {} }, { name: 'fixture', version: '1' })
+      ).rejects.toMatchObject({ code: 'browser_owner_conflict' });
+    }
+  );
   it('rejects generation mismatch and view alias/tool violations without starting a transport', async () => {
     const broker = new DaemonBroker();
     const handle = broker.register({ definitions: [{ ...generic(), blockedTools: ['secret'] }] });

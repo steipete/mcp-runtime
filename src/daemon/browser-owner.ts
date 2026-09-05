@@ -14,7 +14,7 @@ import { normalizeServerEntry } from '../config-normalize.js';
 import {
   connectionIdentity,
   effectiveDefinition,
-  isChromeDefinition,
+  isExistingChromeDefinition,
   normalizeChromeEnvironment,
   type ResolvedServerDefinition,
 } from './connection-identity.js';
@@ -24,7 +24,7 @@ export class BrowserOwnerConflict extends Error {
   readonly code = 'browser_owner_conflict';
   constructor(reason: string) {
     super(
-      `Existing Chrome owner conflict: ${reason}. Use the canonical Chrome definition; drain and stop the daemon before deliberately changing ownership. This request was not retried.`
+      `Existing Chrome request refused: ${reason}. Use the canonical Chrome definition; if changing an existing owner, drain and stop the daemon first. This request was not retried.`
     );
   }
 }
@@ -75,7 +75,7 @@ export async function canonicalChromeDefinitions(): Promise<ResolvedServerDefini
 
 function supportedOwner(definition: ServerDefinition): boolean {
   return (
-    isChromeDefinition(definition) &&
+    isExistingChromeDefinition(definition) &&
     definition.command.kind === 'stdio' &&
     resolveChromeDevtoolsAutoConnectCommand(definition.command.command, definition.command.args).enabled
   );
@@ -96,12 +96,14 @@ export class BrowserOwner {
   }
 
   reserve(definition: ResolvedServerDefinition): ServerDefinition {
-    if (!isChromeDefinition(definition)) return definition;
+    if (!isExistingChromeDefinition(definition)) return definition;
     if (!isCanonicalChromeNamespace())
       throw new BrowserOwnerConflict('existing local Chrome is forbidden in an isolated daemon directory');
     if (definition.command.kind !== 'stdio') return definition;
     if (!resolveChromeDevtoolsAutoConnectCommand(definition.command.command, definition.command.args).enabled)
-      throw new BrowserOwnerConflict('direct endpoints, wrappers and profile labels do not prove a distinct browser');
+      throw new BrowserOwnerConflict(
+        'connection or browser-selection flags and ambiguous wrappers may reach an existing browser; only canonical auto-connect is supported'
+      );
     const configured = this.canonical[0];
     if (this.canonicalKeys.size !== 1 || !configured)
       throw new BrowserOwnerConflict('canonical global Chrome definitions are missing or conflicting');

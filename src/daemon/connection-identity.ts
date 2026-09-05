@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { isExistingChromeDevtoolsCommand } from '../chrome-devtools-command.js';
 import {
   resolveChromeDevtoolsRelayEnvironment,
   resolveChromeDevtoolsRelayPolicy,
@@ -47,7 +48,7 @@ export async function effectiveDefinition(
       .map((key) => [key, env[key] ?? ''])
   );
   normalizeChromeEnvironment(definition, env);
-  const chrome = isChromeDefinition(definition);
+  const chrome = isExistingChromeDefinition(definition, env);
   const launchCommand =
     definition.command.kind === 'stdio' ? resolveCommandArgument(definition.command.command, env) : undefined;
   const command =
@@ -71,7 +72,7 @@ export async function effectiveDefinition(
 }
 
 export function normalizeChromeEnvironment(definition: ServerDefinition, env: Record<string, string>): void {
-  if (isChromeDefinition(definition)) {
+  if (isExistingChromeDefinition(definition, env)) {
     env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, env);
     env.MCPORTER_CHROME_DEVTOOLS_RELAY_TIMEOUT_MS = String(resolveChromeDevtoolsRelayProbeTimeoutMs(env));
     delete env.MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY;
@@ -119,7 +120,7 @@ export function connectionIdentity(definition: ResolvedServerDefinition): string
   // HTTP cached credentials are alias-owned even when auth was inferred on first use.
   const credentialOwner = definition.auth || definition.command.kind === 'http' ? name : undefined;
   const env = { ...definition.env };
-  const chrome = isChromeDefinition(definition);
+  const chrome = isExistingChromeDefinition(definition);
   if (chrome) {
     env.MCPORTER_CHROME_DEVTOOLS_RELAY_POLICY = resolveChromeDevtoolsRelayPolicy(definition.chromeDevtoolsRelay, env);
     delete env.MCPORTER_DISABLE_CHROME_DEVTOOLS_RELAY;
@@ -141,12 +142,14 @@ export function connectionIdentity(definition: ResolvedServerDefinition): string
     .digest('hex');
 }
 
-/** No profile mapping is proven: every recognizable Chrome command is conservative. */
-export function isChromeDefinition(definition: ServerDefinition): boolean {
+/** Plain launches own their browser; connection selectors and ambiguous wrappers do not prove isolation. */
+export function isExistingChromeDefinition(definition: ServerDefinition, env?: NodeJS.ProcessEnv): boolean {
+  if (definition.command.kind !== 'stdio') return false;
+  const effectiveEnv = env ?? resolveChromeDevtoolsRelayEnvironment(definition.env);
+  const command = resolveCommandArgument(definition.command.command, effectiveEnv);
+  const args = resolveCommandArguments(definition.command.args, effectiveEnv);
   return (
-    definition.command.kind === 'stdio' &&
-    [definition.name, definition.command.command, ...definition.command.args].some((value) =>
-      /chrome[-_]devtools(?:[-_]mcp)?/i.test(value)
-    )
+    [definition.name, command, ...args].some((value) => /chrome[-_]devtools(?:[-_]mcp)?/i.test(value)) &&
+    isExistingChromeDevtoolsCommand(command, args)
   );
 }

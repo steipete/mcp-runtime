@@ -189,7 +189,7 @@ describe('createClientContext (HTTP)', () => {
     const onTransportCreated = vi.fn();
 
     await expect(createClientContext(definition, logger, clientInfo, { onTransportCreated })).rejects.toThrow(
-      'Existing Chrome owner conflict'
+      'Existing Chrome request refused'
     );
     expect(onTransportCreated).not.toHaveBeenCalled();
     expect(logger.info).not.toHaveBeenCalled();
