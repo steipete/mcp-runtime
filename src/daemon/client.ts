@@ -216,7 +216,7 @@ export class DaemonClient {
       );
     this.startingPromise ??= (async () => {
       const { launchDaemonDetached } = await import('./launch.js');
-      launchDaemonDetached({
+      await launchDaemonDetached({
         configPath: this.options.configPath,
         metadataPath: this.metadataPath,
         socketPath: this.socketPath,

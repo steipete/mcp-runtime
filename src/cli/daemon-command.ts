@@ -126,7 +126,7 @@ async function handleDaemonStart(args: string[], options: DaemonCliOptions, clie
     forwardedArgs.push('--log-servers', Array.from(logging.serverFilter).join(','));
   }
 
-  launchDaemonDetached({
+  await launchDaemonDetached({
     configPath: options.configPath,
     configExplicit: options.configExplicit,
     rootDir: options.rootDir,

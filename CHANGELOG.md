@@ -2,7 +2,7 @@
 
 ## [0.13.10] - Unreleased
 
-- Handle detached daemon spawn errors so a missing launch command reaches the normal startup failure path instead of crashing the parent CLI. (PR #347, thanks @SebTardif)
+- Report detached daemon launch failures with the executable and OS error instead of crashing the parent CLI or waiting for a readiness timeout. (PR #347, thanks @SebTardif)
 
 ## [0.13.9] - 2026-09-05
 

@@ -1,3 +1,4 @@
+import type { ChildProcess, spawn } from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
@@ -12,35 +13,60 @@ const options: DaemonLaunchOptions = {
   extraArgs: ['--log-file', '/tmp/mcporter/daemon.log'],
 };
 
-describe('buildDaemonLaunchInvocation', () => {
-  it('spawns and unreferences the detached daemon', () => {
-    const child = new EventEmitter() as EventEmitter & { unref: () => void };
-    child.unref = vi.fn();
-    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+describe('launchDaemonDetached', () => {
+  it('waits for spawn and unreferences the detached daemon without waiting for exit', async () => {
+    const child = new EventEmitter() as ChildProcess;
+    const unref = vi.fn();
+    child.unref = unref;
+    const launch = vi.fn(() => child);
+    const settled = vi.fn();
 
-    launchDaemonDetached(options, launch as unknown as typeof import('node:child_process').spawn);
+    const launched = launchDaemonDetached(options, launch as typeof spawn).then(settled);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(settled).not.toHaveBeenCalled();
+    child.emit('spawn');
+    await launched;
 
     expect(launch).toHaveBeenCalledWith(
       process.execPath,
       expect.arrayContaining(['daemon', 'start', '--foreground']),
       expect.objectContaining({ detached: true, stdio: 'ignore' })
     );
-    expect(child.unref).toHaveBeenCalled();
+    expect(unref).toHaveBeenCalled();
+    expect(settled).toHaveBeenCalledOnce();
+    expect(() => child.emit('error', new Error('late child error'))).not.toThrow();
+    expect(() => child.emit('error', new Error('another late child error'))).not.toThrow();
+    await expect(launched).resolves.toBeUndefined();
   });
 
-  it('attaches an error listener before unref so spawn failures stay handled', () => {
-    const child = new EventEmitter() as EventEmitter & { unref: () => void };
-    child.unref = vi.fn(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' })));
-    const launch = vi.fn(() => child as unknown as ReturnType<typeof import('node:child_process').spawn>);
+  it.each(['ENOENT', 'EACCES'])('reports %s with the launch command and original cause', async (code) => {
+    const child = new EventEmitter() as ChildProcess;
+    const error = Object.assign(new Error(code), { code });
+    const unref = vi.fn(() => child.emit('error', error));
+    child.unref = unref;
+    const launch = vi.fn(() => child);
 
-    expect(() =>
-      launchDaemonDetached(options, launch as unknown as typeof import('node:child_process').spawn)
-    ).not.toThrow();
-    expect(child.listenerCount('error')).toBeGreaterThan(0);
-    expect(() => child.emit('error', Object.assign(new Error('ENOENT'), { code: 'ENOENT' }))).not.toThrow();
-    expect(child.unref).toHaveBeenCalled();
+    await expect(launchDaemonDetached(options, launch as typeof spawn)).rejects.toMatchObject({
+      message: `Failed to start MCPorter daemon (${process.execPath}): ${code}`,
+      cause: error,
+    });
+    expect(() => child.emit('error', error)).not.toThrow();
+    expect(unref).toHaveBeenCalled();
   });
 
+  it('reports synchronous spawn failures through the same rejection path', async () => {
+    const error = new Error('spawn failed');
+    const launch = vi.fn(() => {
+      throw error;
+    });
+    await expect(launchDaemonDetached(options, launch)).rejects.toMatchObject({
+      message: `Failed to start MCPorter daemon (${process.execPath}): spawn failed`,
+      cause: error,
+    });
+  });
+});
+
+describe('buildDaemonLaunchInvocation', () => {
   it('launches Node entrypoints directly with the CLI script path', () => {
     const invocation = buildDaemonLaunchInvocation(options, {
       argvEntry: '/repo/dist/cli.js',

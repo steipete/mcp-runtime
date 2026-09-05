@@ -26,15 +26,24 @@ interface DaemonLaunchInvocation {
   readonly env: NodeJS.ProcessEnv;
 }
 
-export function launchDaemonDetached(options: DaemonLaunchOptions, launch: typeof spawn = spawn): void {
+export async function launchDaemonDetached(options: DaemonLaunchOptions, launch: typeof spawn = spawn): Promise<void> {
   const invocation = buildDaemonLaunchInvocation(options);
-  const child = launch(invocation.command, invocation.args, {
-    detached: true,
-    stdio: 'ignore',
-    env: invocation.env,
-  });
-  child.on('error', () => {}); // swallow ENOENT when the launch command is missing
-  child.unref();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const child = launch(invocation.command, invocation.args, {
+        detached: true,
+        stdio: 'ignore',
+        env: invocation.env,
+      });
+      // Keep handling late errors after spawn; readiness is checked by the caller.
+      child.on('error', reject);
+      child.once('spawn', resolve);
+      child.unref();
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Failed to start MCPorter daemon (${invocation.command}): ${message}`, { cause: error });
+  }
 }
 
 export function buildDaemonLaunchInvocation(
